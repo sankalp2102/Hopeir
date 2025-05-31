@@ -1,17 +1,25 @@
 from django.shortcuts import render
 from rest_framework.generics import GenericAPIView
-from rest_framework import mixins, status
+from rest_framework import mixins, status, generics
 from rest_framework.response import Response
-from .models import Rides
-from .serializers import RidesSerializer
+from .models import Rides, RideRequest
+from .serializers import RidesSerializer, RideRequestCreateSerializer, RideRequestUpdateSerializer
 from django.utils.timezone import now
+from rest_framework import permissions
+from rest_framework.exceptions import PermissionDenied
 
 class RideCreateView(mixins.CreateModelMixin, GenericAPIView):
     queryset = Rides.objects.all()
     serializer_class = RidesSerializer
+    permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
         return self.create(request, *args, **kwargs)
+    
+class RideListView(generics.ListAPIView):
+    queryset = Rides.objects.all()
+    serializer_class = RidesSerializer
+    permission_classes = [permissions.AllowAny]
 
 
 # {
@@ -31,6 +39,7 @@ class RideCreateView(mixins.CreateModelMixin, GenericAPIView):
 class RideActionView(GenericAPIView):
     queryset = Rides.objects.all()
     serializer_class = RidesSerializer  # Optional; only used if you want to return serialized ride
+    permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
         ride_id = kwargs.get('ride_id')
@@ -67,4 +76,30 @@ class RideActionView(GenericAPIView):
             "message": f"Ride {action}ed successfully",
             "ride": serializer.data
         }, status=status.HTTP_200_OK)
+
+
+
+class RideRequestCreateView(generics.CreateAPIView):
+    serializer_class = RideRequestCreateSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+
+class RideRequestRespondView(generics.RetrieveUpdateAPIView):
+    queryset = RideRequest.objects.all()
+    serializer_class = RideRequestUpdateSerializer
+    permission_classes = [permissions.AllowAny]
+    lookup_url_kwarg = 'request_id'
+
+    def get_object(self):
+        ride_request = super().get_object()
+        # if ride_request.ride.user != self.request.user:
+        #     raise PermissionDenied("You are not the driver of this ride.")
+        return ride_request
+
 

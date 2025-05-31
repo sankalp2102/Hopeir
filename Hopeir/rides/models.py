@@ -19,6 +19,19 @@ class Rides(models.Model):
     def __str__(self):
         return f"Ride {self.id} by {self.user.email} from {self.start_location} to {self.end_location}"
 
+class RideRequest(models.Model):
+    ride = models.ForeignKey(Rides, on_delete=models.CASCADE, related_name='ride_requests')
+    passenger = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='ride_requests', null=True, blank=True)
+    status = models.CharField(max_length=20, choices=[('pending', 'Pending'), ('accepted', 'Accepted'), ('rejected', 'Rejected')], default='pending')
+    requested_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('ride', 'passenger')  # one passenger can't request same ride twice
+
+    def __str__(self):
+        return f"Ride {self.ride.id} ({self.status})"
+    
+
 class RideFeedback(models.Model):
     ride = models.ForeignKey(Rides, on_delete=models.CASCADE, related_name='feedback')
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='ride_feedback')

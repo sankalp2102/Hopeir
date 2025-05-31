@@ -22,7 +22,7 @@ class CustomUser(AbstractUser):
     updated_at = models.DateTimeField(auto_now=True)
     
     def __str__(self):
-        return self.email
+        return f"{self.email} {self.user_id}"
 
 class VehicleProfile(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)

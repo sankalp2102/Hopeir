@@ -55,7 +55,17 @@ class VehicleProfileListCreateAPIView(generics.ListCreateAPIView):
         user_id = self.request.data.get('user')
         if user_id is not None:
             user_model = get_user_model()
-            user = user_model.objects.get(id=user_id)
+            user = user_model.objects.get(user_id=user_id)
             serializer.save(user=user)
         else:
             serializer.save(user=self.request.user)  # fallback if user is not provided
+
+# {
+#   "user": 3,  // ID of the user (driver)
+#   "vehicle_type": "Car",
+#   "vehicle_model": "Hyundai i20",
+#   "vehicle_year": 2022,
+#   "vehicle_color": "Red",
+#   "vehicle_license_plate": "KA01CD4567",
+#   "vehicle_engine_type": "Petrol"
+# }

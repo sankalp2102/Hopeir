@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Rides
+from .models import Rides, RideRequest, RideFeedback
 
 class RidesSerializer(serializers.ModelSerializer):
     class Meta:
@@ -7,4 +7,42 @@ class RidesSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
         
-        
+
+
+class RideRequestCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RideRequest
+        fields = ['ride']
+
+    def validate(self, attrs):
+        # user = self.context['request'].user
+        # ride = attrs['ride']
+
+        # if ride.user == user:
+        #     raise serializers.ValidationError("You cannot request your own ride.")
+
+        # if RideRequest.objects.filter(ride=ride, passenger=user).exists():
+        #     raise serializers.ValidationError("You have already requested this ride.")
+
+        return attrs
+
+    def create(self, validated_data):
+        # validated_data['passenger'] = self.context['request'].user
+        return super().create(validated_data)
+
+
+class RideRequestUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RideRequest
+        fields = ['status']
+
+    def validate(self, attrs):
+        # if attrs['status'] not in ['accepted', 'rejected']:
+        #     raise serializers.ValidationError("Invalid status.")
+        return attrs
+
+
+class RideFeedbackSerializer(serializers.ModelSerializer):
+    class meta:
+        model = RideFeedback
+        fields = "__all__"
