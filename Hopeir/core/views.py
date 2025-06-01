@@ -3,41 +3,18 @@ from .serializers import CustomUserSerializer, VehicleProfileSerializer
 from .models import CustomUser, VehicleProfile
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
+from django.shortcuts import get_object_or_404
+from rest_framework.exceptions import PermissionDenied
 
-# class SyncSupertokensUserView(GenericAPIView):
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def post(self, request):
-#         user_id = get_user_id(request)
-
-#         if not user_id:
-#             return Response({"error": "Invalid session"}, status=401)
-
-#         email = request.data.get("email")
-
-#         if not email:
-#             return Response({"error": "Email is required"}, status=400)
-
-#         user, created = CustomUser.objects.get_or_create(
-#             email=email,
-#             defaults={
-#                 "username": email.split("@")[0],  # fallback
-#                 "first_name": "",
-#                 "last_name": "",
-#             }
-#         )
-
-#         return Response({
-#             "status": "OK",
-#             "user_id": user.user_id,
-#             "created": created
-#         })
 
 class ProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = CustomUserSerializer
-    permission_classes = [permissions.IsAuthenticated] 
+    permission_classes = [permissions.AllowAny] 
     def get_object(self):
-        return self.request.user
+        email = self.kwargs.get('email')
+        # if self.request.user.email != email:
+        #     raise PermissionDenied("You are not allowed to access this profile.")
+        return get_object_or_404(CustomUser, email=email)
     
 class ProfileCreateView(generics.CreateAPIView):
     serializer_class = CustomUserSerializer
