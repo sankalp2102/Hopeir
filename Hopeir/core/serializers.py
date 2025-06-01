@@ -16,9 +16,18 @@ class CustomUserSerializer(serializers.ModelSerializer):
         
     def create(self, validated_data):
         email = validated_data.get("email")
+        password = validated_data.pop("password", None)
+
         if CustomUser.objects.filter(email=email).exists():
             raise serializers.ValidationError({"email": "This email is already registered."})
-        return super().create(validated_data)
+
+        user = CustomUser(**validated_data)
+        if password:
+            user.set_password(password)  # Hash the password correctly
+        user.save()
+        return user
+    
+    
 class VehicleProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = VehicleProfile

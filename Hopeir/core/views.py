@@ -1,10 +1,11 @@
-from rest_framework import generics, permissions
+from rest_framework import generics, permissions, status
 from .serializers import CustomUserSerializer, VehicleProfileSerializer
 from .models import CustomUser, VehicleProfile
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.views import APIView
 
 
 class ProfileView(generics.RetrieveUpdateAPIView):
@@ -19,6 +20,8 @@ class ProfileView(generics.RetrieveUpdateAPIView):
 class ProfileCreateView(generics.CreateAPIView):
     serializer_class = CustomUserSerializer
     permission_classes = [permissions.AllowAny]
+
+    
 
 
 class VehicleProfileListCreateAPIView(generics.ListCreateAPIView):
@@ -50,3 +53,4 @@ class VehicleProfileListCreateAPIView(generics.ListCreateAPIView):
 #   "vehicle_license_plate": "KA01CD4567",
 #   "vehicle_engine_type": "Petrol"
 # }
+
