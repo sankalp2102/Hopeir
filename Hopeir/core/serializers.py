@@ -5,8 +5,20 @@ class CustomUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = '__all__'
-        read_only_fields = ['user_id', 'email', 'role', 'created_at', 'updated_at']
-
+        
+    
+    def validate_email(self, value):
+        email = value.strip().lower()
+        if CustomUser.objects.filter(email=email).exists():
+            raise serializers.ValidationError("This email is already registered.")
+        return email
+    
+        
+    def create(self, validated_data):
+        email = validated_data.get("email")
+        if CustomUser.objects.filter(email=email).exists():
+            raise serializers.ValidationError({"email": "This email is already registered."})
+        return super().create(validated_data)
 class VehicleProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = VehicleProfile

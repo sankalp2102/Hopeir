@@ -38,6 +38,10 @@ class ProfileView(generics.RetrieveUpdateAPIView):
     permission_classes = [permissions.IsAuthenticated] 
     def get_object(self):
         return self.request.user
+    
+class ProfileCreateView(generics.CreateAPIView):
+    serializer_class = CustomUserSerializer
+    permission_classes = [permissions.AllowAny]
 
 
 class VehicleProfileListCreateAPIView(generics.ListCreateAPIView):
