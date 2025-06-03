@@ -16,6 +16,12 @@ from supertokens_python.recipe import emailpassword, session
 from supertokens_python import get_all_cors_headers
 from typing import List
 from corsheaders.defaults import default_headers
+import dj_database_url
+from decouple import config
+import os
+
+# from dotenv import load_dotenv
+# load_dotenv()
 
 
 init(
@@ -50,7 +56,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-b6!mb@ymmvhd-r36esm%9@uip+57$#=s7qrsdphpp3dqha@fud'
+SECRET_KEY = os.environ["SECRET_KEY"]
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -114,10 +120,11 @@ WSGI_APPLICATION = 'Hopeir.wsgi.application'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': dj_database_url.config(default=config('DATABASE_URL'))
+    # 'default': {
+    #     'ENGINE': 'django.db.backends.sqlite3',
+    #     'NAME': BASE_DIR / 'db.sqlite3',
+    # }
 }
 
 
