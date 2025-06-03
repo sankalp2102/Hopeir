@@ -11,6 +11,7 @@ cffi==1.17.1
 charset-normalizer==3.4.2
 cryptography==45.0.3
 Deprecated==1.2.18
+dj-database-url==3.0.0
 Django==5.2.1
 django-cors-headers==4.7.0
 djangorestframework==3.16.0
@@ -30,11 +31,15 @@ packaging==25.0
 phonenumbers==8.13.55
 pkce==1.0.3
 propcache==0.3.1
+psycopg==3.2.9
+psycopg2-binary==2.9.10
 pycparser==2.22
 pycryptodome==3.20.0
 PyJWT==2.10.1
 pyotp==2.9.0
 python-dateutil==2.9.0.post0
+python-decouple==3.8
+python-dotenv==1.1.0
 PyYAML==6.0.2
 referencing==0.36.2
 requests==2.32.3
