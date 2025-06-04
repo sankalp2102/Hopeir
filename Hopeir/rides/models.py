@@ -15,6 +15,7 @@ class Rides(models.Model):
     status = models.CharField(max_length=50, default='pending')  # e.g., pending, completed, cancelled
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    seats = models.IntegerField(default=1, null=True, blank=True)
 
     def __str__(self):
         return f"Ride {self.id} by {self.user.email} from {self.start_location} to {self.end_location}"
