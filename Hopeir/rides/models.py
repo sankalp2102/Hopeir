@@ -33,26 +33,15 @@ class RideRequest(models.Model):
         return f"Ride {self.ride.id} ({self.status})"
     
 
-class RiderFeedback(models.Model):
+class RideFeedback(models.Model):
     ride = models.ForeignKey(Rides, on_delete=models.CASCADE, related_name='feedback')
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='ride_feedback')
-    rating = models.IntegerField()  # e.g., 1 to 5 stars
+    from_user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='feedback_given',  null=True, blank=True)
+    to_user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='feedback_received',  null=True, blank=True)
+    rating = models.PositiveIntegerField(null=True, blank=True)
     comment = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
+    
     def __str__(self):
-        return f"Feedback for Ride {self.ride.id} by {self.user.email}"
+        return f"Feedback for Ride id {self.ride.id} ,feedback id is {self.id}"
     
     
-
-class PassangerFeedback(models.Model):
-    ride = models.ForeignKey(Rides, on_delete=models.CASCADE, related_name='passenger_feedback')
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='passenger_feedback')
-    rating = models.IntegerField()  # e.g., 1 to 5 stars
-    comment = models.TextField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"Passenger Feedback for Ride {self.ride.id} by {self.user.email}"

@@ -2,8 +2,8 @@ from django.shortcuts import render
 from rest_framework.generics import GenericAPIView
 from rest_framework import mixins, status, generics
 from rest_framework.response import Response
-from .models import Rides, RideRequest
-from .serializers import RidesSerializer, RideRequestCreateSerializer, RideRequestUpdateSerializer
+from .models import Rides, RideRequest, RideFeedback
+from .serializers import RidesSerializer, RideRequestCreateSerializer, RideRequestUpdateSerializer, RideFeedbackSerializer
 from django.utils.timezone import now
 from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied
@@ -103,3 +103,32 @@ class RideRequestRespondView(generics.RetrieveUpdateAPIView):
         return ride_request
 
 
+class RideFeedbackCreateView(generics.CreateAPIView):
+    serializer_class = RideFeedbackSerializer
+    permission_classes = [permissions.AllowAny]  # or IsAuthenticated if needed
+
+    def perform_create(self, serializer):
+        serializer.save()
+    
+
+class RideFeedbackListView(generics.ListAPIView):
+    serializer_class = RideFeedbackSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        queryset = RideFeedback.objects.all()
+
+        ride_id = self.request.query_params.get('ride_id')
+        from_user_id = self.request.query_params.get('from_user')
+        to_user_id = self.request.query_params.get('to_user')
+
+        if ride_id:
+            queryset = queryset.filter(ride_id=ride_id)
+
+        if from_user_id:
+            queryset = queryset.filter(from_user_id=from_user_id)
+
+        if to_user_id:
+            queryset = queryset.filter(to_user_id=to_user_id)
+
+        return queryset

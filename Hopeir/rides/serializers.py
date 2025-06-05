@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Rides, RideRequest, RiderFeedback, PassangerFeedback
+from .models import Rides, RideRequest, RideFeedback
 
 class RidesSerializer(serializers.ModelSerializer):
     class Meta:
@@ -42,13 +42,13 @@ class RideRequestUpdateSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class RiderFeedbackSerializer(serializers.ModelSerializer):
-    class meta:
-        model = RiderFeedback
-        fields = "__all__"
-        
-class PassangerFeedbackSerializer(serializers.ModelSerializer):
+class RideFeedbackSerializer(serializers.ModelSerializer):
     class Meta:
-        model = PassangerFeedback
-        fields = "__all__"
+        model = RideFeedback
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at']
 
+    # def validate(self, data):
+    #     if data['from_user'] == data['to_user']:
+    #         raise serializers.ValidationError("You cannot give feedback to yourself.")
+    #     return data
