@@ -8,7 +8,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
 
 
-class ProfileView(generics.RetrieveUpdateAPIView):
+class ProfileViewByEmail(generics.RetrieveUpdateAPIView):
     serializer_class = CustomUserSerializer
     permission_classes = [permissions.AllowAny] 
     def get_object(self):
@@ -16,6 +16,19 @@ class ProfileView(generics.RetrieveUpdateAPIView):
         # if self.request.user.email != email:
         #     raise PermissionDenied("You are not allowed to access this profile.")
         return get_object_or_404(CustomUser, email=email)
+    
+
+
+class ProfileViewByUserId(generics.RetrieveAPIView):
+    serializer_class = CustomUserSerializer
+    permission_classes = [permissions.AllowAny]  # Or IsAuthenticated based on your needs
+    def get_object(self):
+        user_id = self.kwargs.get('user_id')
+        # if self.request.user.id != user_id:
+        #     raise PermissionDenied("You are not allowed to access this profile.")
+        return get_object_or_404(CustomUser, user_id=user_id)
+    
+
     
 class ProfileCreateView(generics.CreateAPIView):
     serializer_class = CustomUserSerializer

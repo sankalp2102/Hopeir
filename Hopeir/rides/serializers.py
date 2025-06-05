@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Rides, RideRequest, RideFeedback
+from .models import Rides, RideRequest, RiderFeedback, PassangerFeedback
 
 class RidesSerializer(serializers.ModelSerializer):
     class Meta:
@@ -42,7 +42,13 @@ class RideRequestUpdateSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class RideFeedbackSerializer(serializers.ModelSerializer):
+class RiderFeedbackSerializer(serializers.ModelSerializer):
     class meta:
-        model = RideFeedback
+        model = RiderFeedback
         fields = "__all__"
+        
+class PassangerFeedbackSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PassangerFeedback
+        fields = "__all__"
+

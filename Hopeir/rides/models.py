@@ -33,7 +33,7 @@ class RideRequest(models.Model):
         return f"Ride {self.ride.id} ({self.status})"
     
 
-class RideFeedback(models.Model):
+class RiderFeedback(models.Model):
     ride = models.ForeignKey(Rides, on_delete=models.CASCADE, related_name='feedback')
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='ride_feedback')
     rating = models.IntegerField()  # e.g., 1 to 5 stars
@@ -44,3 +44,15 @@ class RideFeedback(models.Model):
     def __str__(self):
         return f"Feedback for Ride {self.ride.id} by {self.user.email}"
     
+    
+
+class PassangerFeedback(models.Model):
+    ride = models.ForeignKey(Rides, on_delete=models.CASCADE, related_name='passenger_feedback')
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='passenger_feedback')
+    rating = models.IntegerField()  # e.g., 1 to 5 stars
+    comment = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Passenger Feedback for Ride {self.ride.id} by {self.user.email}"
