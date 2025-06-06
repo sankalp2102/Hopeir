@@ -60,7 +60,7 @@ class RideActionView(GenericAPIView):
 
         # Handle actions
         if action == "start":
-            if ride.status != "pending":
+            if ride.status != "accepted":
                 return Response({"error": "Ride cannot be started"}, status=status.HTTP_400_BAD_REQUEST)
             ride.status = "ongoing"
             ride.start_time = now()
