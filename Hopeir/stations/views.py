@@ -4,8 +4,7 @@ from .models import Station
 from .serializers import StationsSerializer
 # Create your views here.
 
-class StationView(generics.ListCreateAPIView):
-    queryset = Station.objects.all()
+class StationCreateView(generics.CreateAPIView):
     serializer_class = StationsSerializer
     permission_classes = [permissions.AllowAny]
     
@@ -20,3 +19,14 @@ class StationView(generics.ListCreateAPIView):
 #     "postal_code": "D01",
 #     "landmark": "Near Spire of Dublin"
 #   },
+
+class StationListView(generics.ListAPIView):
+    serializer_class = StationsSerializer
+    permission_classes = [permissions.AllowAny]
+    
+    def get_queryset(self):
+        station_id = self.request.query_params.get('station_id')
+        if station_id:
+            return Station.objects.filter(id=station_id)
+        return Station.objects.all()
+    

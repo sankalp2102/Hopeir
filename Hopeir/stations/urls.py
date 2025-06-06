@@ -1,5 +1,6 @@
 from django.urls import path
-from .views import StationView
+from .views import StationCreateView, StationListView
 urlpatterns = [
-    path('stations/', StationView.as_view(), name='stations-list-create'),
+    path('post', StationCreateView.as_view(), name='stations-list-create'),
+    path('get/', StationListView.as_view(), name='stations-get'),
 ]
