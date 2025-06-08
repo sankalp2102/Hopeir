@@ -3,7 +3,9 @@ from rest_framework.generics import GenericAPIView
 from rest_framework import mixins, status, generics
 from rest_framework.response import Response
 from .models import Rides, RideRequest, RideFeedback
-from .serializers import RidesSerializer, RideRequestCreateSerializer, RideRequestUpdateSerializer, RideFeedbackSerializer
+from .serializers import (RidesSerializer, RideRequestCreateSerializer, 
+                          RideRequestUpdateSerializer, RideFeedbackSerializer,
+                          RideRequestListSerializer)
 from django.utils.timezone import now
 from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied
@@ -88,27 +90,70 @@ class RideActionView(GenericAPIView):
 
 
 class RideRequestCreateView(generics.CreateAPIView):
+    queryset = RideRequest.objects.all()
     serializer_class = RideRequestCreateSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.AllowAny]  # use IsAuthenticated later
 
     def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context['request'] = self.request
-        return context
+        return super().get_serializer_context()
+    
+# {
+#   "ride": 1,
+#   "from_user": 1
+# }
 
 
+class RideRequestListForDriverView(generics.ListAPIView):
+    serializer_class = RideRequestListSerializer
+    permission_classes = [permissions.AllowAny]  # allow unauthenticated for testing
 
-class RideRequestRespondView(generics.RetrieveUpdateAPIView):
-    queryset = RideRequest.objects.all()
-    serializer_class = RideRequestUpdateSerializer
-    permission_classes = [permissions.AllowAny]
-    lookup_url_kwarg = 'request_id'
+    def get_queryset(self):
+        user_id = self.request.query_params.get('user_id')
+        if not user_id:
+            return RideRequest.objects.none()
 
-    def get_object(self):
-        ride_request = super().get_object()
-        # if ride_request.ride.user != self.request.user:
-        #     raise PermissionDenied("You are not the driver of this ride.")
-        return ride_request
+        return RideRequest.objects.filter(ride__user__user_id=user_id)
+    
+
+
+class RideRequestRespondView(generics.GenericAPIView):
+    permission_classes = [permissions.AllowAny]  # Change to IsAuthenticated in production
+    serializer_class = None  # No serializer needed here, we handle data manually
+
+    def post(self, request, pk):
+        action = request.data.get('action')
+        user_id = request.data.get('user_id')
+
+        if not user_id:
+            return Response({"error": "user_id is required for testing."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Fetch the RideRequest object only if it belongs to the driver's ride
+        try:
+            ride_request = RideRequest.objects.get(id=pk, ride__user__user_id=user_id)
+        except RideRequest.DoesNotExist:
+            return Response({"error": "Ride request not found or unauthorized."}, status=status.HTTP_404_NOT_FOUND)
+
+        if ride_request.status != 'pending':
+            return Response({"error": "This request has already been responded to."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if action == 'accept':
+            if ride_request.ride.seats <= 0:
+                return Response({"error": "No seats available."}, status=status.HTTP_400_BAD_REQUEST)
+            ride_request.status = 'accepted'
+            ride_request.ride.seats -= 1
+            ride_request.ride.save()
+        elif action == 'reject':
+            ride_request.status = 'rejected'
+        else:
+            return Response({"error": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
+
+        ride_request.save()
+        return Response({"message": f"Request {action}ed successfully."}, status=status.HTTP_200_OK)
+    
+# {
+#   "action": "accept",
+#   "driver_id": 2
+# }
 
 
 class RideFeedbackCreateView(generics.CreateAPIView):

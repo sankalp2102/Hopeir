@@ -8,27 +8,25 @@ class RidesSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
         
 
-
 class RideRequestCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = RideRequest
-        fields = ['ride']
+        fields = ['ride', 'from_user']
 
     def validate(self, attrs):
-        # user = self.context['request'].user
-        # ride = attrs['ride']
-
-        # if ride.user == user:
-        #     raise serializers.ValidationError("You cannot request your own ride.")
-
-        # if RideRequest.objects.filter(ride=ride, passenger=user).exists():
-        #     raise serializers.ValidationError("You have already requested this ride.")
-
+        ride = attrs['ride']
+        if ride.seats <= 0:
+            raise serializers.ValidationError("No seats available.")
         return attrs
 
-    def create(self, validated_data):
-        # validated_data['passenger'] = self.context['request'].user
-        return super().create(validated_data)
+
+class RideRequestListSerializer(serializers.ModelSerializer):
+    passenger_name = serializers.CharField(source='from_user.first_name', read_only=True)
+    ride_id = serializers.IntegerField(source='ride.id', read_only=True)
+
+    class Meta:
+        model = RideRequest
+        fields = ['id', 'ride_id', 'passenger_name', 'status', 'requested_at']
 
 
 class RideRequestUpdateSerializer(serializers.ModelSerializer):
