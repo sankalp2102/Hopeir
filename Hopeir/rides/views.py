@@ -48,44 +48,42 @@ class RideListView(generics.ListAPIView):
 
 class RideActionView(GenericAPIView):
     queryset = Rides.objects.all()
-    serializer_class = RidesSerializer  # Optional; only used if you want to return serialized ride
-    permission_classes = [permissions.AllowAny]
+    serializer_class = RidesSerializer
+    permission_classes = [permissions.AllowAny]  # change to IsAuthenticated if needed
 
-    def post(self, request, *args, **kwargs):
-        ride_id = kwargs.get('ride_id')
-        action = kwargs.get('action')
-
+    def post(self, request, ride_id, action, *args, **kwargs):
         try:
             ride = self.get_queryset().get(pk=ride_id)
         except Rides.DoesNotExist:
             return Response({"error": "Ride not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        # Handle actions
+        # Action Handling
         if action == "start":
-            if ride.status != "accepted":
-                return Response({"error": "Ride cannot be started"}, status=status.HTTP_400_BAD_REQUEST)
+            if ride.status not in ["pending", "accepted"]:
+                return Response({"error": "Ride cannot be started in current state"}, status=400)
             ride.status = "ongoing"
             ride.start_time = now()
+
         elif action == "end":
             if ride.status != "ongoing":
-                return Response({"error": "Ride cannot be ended"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": "Ride cannot be ended unless it is ongoing"}, status=400)
             ride.status = "completed"
             ride.end_time = now()
+
         elif action == "cancel":
-            if ride.status not in ["pending", "ongoing"]:
-                return Response({"error": "Ride cannot be cancelled"}, status=status.HTTP_400_BAD_REQUEST)
+            if ride.status in ["completed", "cancelled"]:
+                return Response({"error": "Ride is already completed or cancelled"}, status=400)
             ride.status = "cancelled"
+
         else:
-            return Response({"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Invalid action"}, status=400)
 
         ride.save()
 
-        # Optionally return updated ride data
-        serializer = self.get_serializer(ride)
         return Response({
             "message": f"Ride {action}ed successfully",
-            "ride": serializer.data
-        }, status=status.HTTP_200_OK)
+            "ride": self.get_serializer(ride).data
+        }, status=200)
 
 
 
