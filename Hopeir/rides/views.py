@@ -27,9 +27,12 @@ class RideListView(generics.ListAPIView):
     def get_queryset(self):
         queryset = Rides.objects.all()
         user_id = self.request.query_params.get('user_id')
+        ride_id = self.request.query_params.get('ride_id')
 
         if user_id:
             queryset = queryset.filter(user_id=user_id)
+        if ride_id:
+            queryset = queryset.filter(id=ride_id)
 
         return queryset
 
