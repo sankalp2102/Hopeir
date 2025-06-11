@@ -9,6 +9,8 @@ from .serializers import (RidesSerializer, RideRequestCreateSerializer,
 from django.utils.timezone import now
 from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied
+from django.db.models import Q
+
 
 class RideCreateView(mixins.CreateModelMixin, GenericAPIView):
     queryset = Rides.objects.all()
@@ -110,7 +112,14 @@ class RideRequestListForDriverView(generics.ListAPIView):
         if not user_id:
             return RideRequest.objects.none()
 
-        return RideRequest.objects.filter(ride__user__user_id=user_id)
+        try:
+            user_id = int(user_id)  # Ensure it's an integer
+        except ValueError:
+            return RideRequest.objects.none()
+
+        return RideRequest.objects.filter(
+            Q(from_user__user_id=user_id) | Q(ride__user__user_id=user_id)
+        ).distinct()
     
 
 
