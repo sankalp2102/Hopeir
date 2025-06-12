@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     'rides',
     'stations',
     'fare',
+    'modeldata',
     'rest_framework',
     'corsheaders',
     'supertokens_python',
