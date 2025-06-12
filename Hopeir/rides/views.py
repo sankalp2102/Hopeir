@@ -74,6 +74,7 @@ class RideActionView(GenericAPIView):
         if action == "start":
             ride.status = "ongoing"
             ride.start_time = now()
+            RideRequest.objects.filter(ride=ride, status="pending").update(status="rejected")
 
         elif action == "end":
             if ride.status != "ongoing":
@@ -94,6 +95,7 @@ class RideActionView(GenericAPIView):
             "ride": self.get_serializer(ride).data
         }, status=200)
         
+
         
 
 
