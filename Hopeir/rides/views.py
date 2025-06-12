@@ -54,18 +54,24 @@ class RideListView(generics.ListAPIView):
 class RideActionView(GenericAPIView):
     queryset = Rides.objects.all()
     serializer_class = RidesSerializer
-    permission_classes = [permissions.AllowAny]  # change to IsAuthenticated if needed
+    permission_classes = [permissions.AllowAny]  # OPEN FOR TESTING
 
     def post(self, request, ride_id, action, *args, **kwargs):
         try:
             ride = self.get_queryset().get(pk=ride_id)
         except Rides.DoesNotExist:
-            return Response({"error": "Ride not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "Ride not found"}, status=404)
 
-        # Action Handling
+        # Block changes if already completed or cancelled
+        if ride.status in ["completed", "cancelled"]:
+            return Response({"error": f"Ride is already {ride.status} and cannot be changed"}, status=400)
+
+        # Basic RideRequest existence check for test phase (not enforcing specific user)
+        if not RideRequest.objects.filter(ride=ride).exists():
+            return Response({"error": "No ride request found for this ride"}, status=403)
+
+        # Handle valid actions
         if action == "start":
-            if ride.status not in ["pending", "accepted"]:
-                return Response({"error": "Ride cannot be started in current state"}, status=400)
             ride.status = "ongoing"
             ride.start_time = now()
 
@@ -76,8 +82,6 @@ class RideActionView(GenericAPIView):
             ride.end_time = now()
 
         elif action == "cancel":
-            if ride.status in ["completed", "cancelled"]:
-                return Response({"error": "Ride is already completed or cancelled"}, status=400)
             ride.status = "cancelled"
 
         else:
@@ -89,6 +93,10 @@ class RideActionView(GenericAPIView):
             "message": f"Ride {action}ed successfully",
             "ride": self.get_serializer(ride).data
         }, status=200)
+        
+        
+
+
 
 
 

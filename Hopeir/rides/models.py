@@ -4,6 +4,13 @@ from stations.models import Station
 from fare.models import Fare
 
 class Rides(models.Model):
+    STATUS_CHOICES = [
+    ('pending', 'Pending'),
+    ('accepted', 'Accepted'),
+    ('ongoing', 'Ongoing'),
+    ('completed', 'Completed'),
+    ('cancelled', 'Cancelled'),
+]
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='rides')
     vehicle = models.ForeignKey(VehicleProfile, on_delete=models.CASCADE, related_name='rides')
     start_location = models.ForeignKey(Station, on_delete=models.CASCADE, related_name='rides_start', null=True, blank=True)
@@ -12,7 +19,7 @@ class Rides(models.Model):
     end_time = models.DateTimeField(null=True, blank=True)
     distance = models.FloatField(null=True, blank=True)  # in kilometers
     fare = models.ForeignKey(Fare, on_delete=models.SET_NULL, null=True, blank=True, related_name='rides')
-    status = models.CharField(max_length=50, default='pending')  # e.g., pending, completed, cancelled
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='pending')  # e.g., pending, completed, cancelled
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     seats = models.IntegerField(default=1, null=True, blank=True)
