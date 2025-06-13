@@ -36,7 +36,7 @@ class VehicleProfile(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.vehicle_type} {self.vehicle_model} {self.vehicle_year}"
+        return f"{self.vehicle_type} {self.vehicle_model} {self.vehicle_year} & id is {self.id}"
 
 class VehicleLocation(models.Model):
     vehicle = models.ForeignKey(VehicleProfile, on_delete=models.CASCADE)

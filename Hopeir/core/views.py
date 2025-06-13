@@ -43,6 +43,9 @@ class VehicleProfileListCreateAPIView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         user_id = self.request.query_params.get('user_id')
+        vehicle_id = self.request.query_params.get('vehicle_id')
+        if vehicle_id:
+            return VehicleProfile.objects.filter(id=vehicle_id)
         if user_id:
             return VehicleProfile.objects.filter(user_id=user_id)
         return VehicleProfile.objects.all()
