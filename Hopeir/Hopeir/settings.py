@@ -23,6 +23,8 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
+SECONDS_IN_100_DAYS = 100 * 24 * 60 * 60
+
 
 init(
     app_info=InputAppInfo(
@@ -33,18 +35,15 @@ init(
         website_base_path="/auth"
     ),
     supertokens_config=SupertokensConfig(
-        # We use try.supertokens for demo purposes.
-        # At the end of the tutorial we will show you how to create
-        # your own SuperTokens core instance and then update your config.
-        connection_uri="https://st-dev-c042c9b0-3d17-11f0-812f-2784758e399a.aws.supertokens.io",
-        api_key = "xPg6JNdWBNz7MBaWpVwux=0qVu"
+        connection_uri="https://st-dev-bbb51c70-4a16-11f0-8459-3185928d9a1b.aws.supertokens.io",
+        api_key = "j6QpM=lb77rM7ge4XQmeZs2Qs3"
     ),
     framework='django',
     recipe_list=[
-	    session.init(), # initializes session features
+        session.init(),
         emailpassword.init()
     ],
-    mode='asgi' # use wsgi if you are running django server in sync mode
+    mode='asgi'
 )
 
 

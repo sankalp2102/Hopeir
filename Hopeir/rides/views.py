@@ -4,8 +4,7 @@ from rest_framework import mixins, status, generics
 from rest_framework.response import Response
 from .models import Rides, RideRequest, RideFeedback
 from .serializers import (RidesSerializer, RideRequestCreateSerializer, 
-                          RideRequestUpdateSerializer, RideFeedbackSerializer,
-                          RideRequestListSerializer)
+                          RideFeedbackSerializer, RideRequestListSerializer)
 from django.utils.timezone import now
 from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied
