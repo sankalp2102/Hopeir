@@ -70,3 +70,9 @@ class VehicleProfileListCreateAPIView(generics.ListCreateAPIView):
 #   "vehicle_engine_type": "Petrol"
 # }
 
+
+class TestAPIView(generics.ListAPIView):
+    permission_classes = [permissions.AllowAny]  # Allow any user to access this view
+
+    def get(self, request, *args, **kwargs):
+        return Response({"message": "Server is running successfully!"}, status=status.HTTP_200_OK)
