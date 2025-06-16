@@ -81,6 +81,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'supertokens_python',
+    'channels',
 ]
 
 MIDDLEWARE = [
@@ -202,4 +203,13 @@ SPECTACULAR_SETTINGS = {
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
     # OTHER SETTINGS
+}
+
+ASGI_APPLICATION = 'Hopeir.asgi.application'
+
+# Channels settings
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
 }

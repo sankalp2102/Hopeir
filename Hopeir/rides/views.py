@@ -50,49 +50,49 @@ class RideListView(generics.ListAPIView):
 
 
 
-class RideActionView(GenericAPIView):
-    queryset = Rides.objects.all()
-    serializer_class = RidesSerializer
-    permission_classes = [permissions.AllowAny]  # OPEN FOR TESTING
+# class RideActionView(GenericAPIView):
+#     queryset = Rides.objects.all()
+#     serializer_class = RidesSerializer
+#     permission_classes = [permissions.AllowAny]  # OPEN FOR TESTING
 
-    def post(self, request, ride_id, action, *args, **kwargs):
-        try:
-            ride = self.get_queryset().get(pk=ride_id)
-        except Rides.DoesNotExist:
-            return Response({"error": "Ride not found"}, status=404)
+#     def post(self, request, ride_id, action, *args, **kwargs):
+#         try:
+#             ride = self.get_queryset().get(pk=ride_id)
+#         except Rides.DoesNotExist:
+#             return Response({"error": "Ride not found"}, status=404)
 
-        # Block changes if already completed or cancelled
-        if ride.status in ["completed", "cancelled"]:
-            return Response({"error": f"Ride is already {ride.status} and cannot be changed"}, status=400)
+#         # Block changes if already completed or cancelled
+#         if ride.status in ["completed", "cancelled"]:
+#             return Response({"error": f"Ride is already {ride.status} and cannot be changed"}, status=400)
 
-        # Basic RideRequest existence check for test phase (not enforcing specific user)
-        if not RideRequest.objects.filter(ride=ride).exists():
-            return Response({"error": "No ride request found for this ride"}, status=403)
+#         # Basic RideRequest existence check for test phase (not enforcing specific user)
+#         if not RideRequest.objects.filter(ride=ride).exists():
+#             return Response({"error": "No ride request found for this ride"}, status=403)
 
-        # Handle valid actions
-        if action == "start":
-            ride.status = "ongoing"
-            ride.start_time = now()
-            RideRequest.objects.filter(ride=ride, status="pending").update(status="rejected")
+#         # Handle valid actions
+#         if action == "start":
+#             ride.status = "ongoing"
+#             ride.start_time = now()
+#             RideRequest.objects.filter(ride=ride, status="pending").update(status="rejected")
 
-        elif action == "end":
-            if ride.status != "ongoing":
-                return Response({"error": "Ride cannot be ended unless it is ongoing"}, status=400)
-            ride.status = "completed"
-            ride.end_time = now()
+#         elif action == "end":
+#             if ride.status != "ongoing":
+#                 return Response({"error": "Ride cannot be ended unless it is ongoing"}, status=400)
+#             ride.status = "completed"
+#             ride.end_time = now()
 
-        elif action == "cancel":
-            ride.status = "cancelled"
+#         elif action == "cancel":
+#             ride.status = "cancelled"
 
-        else:
-            return Response({"error": "Invalid action"}, status=400)
+#         else:
+#             return Response({"error": "Invalid action"}, status=400)
 
-        ride.save()
+#         ride.save()
 
-        return Response({
-            "message": f"Ride {action}ed successfully",
-            "ride": self.get_serializer(ride).data
-        }, status=200)
+#         return Response({
+#             "message": f"Ride {action}ed successfully",
+#             "ride": self.get_serializer(ride).data
+#         }, status=200)
         
 
         
