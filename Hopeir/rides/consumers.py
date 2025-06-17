@@ -16,6 +16,12 @@ class RideActionConsumer(AsyncWebsocketConsumer):
         )
 
         await self.accept()
+        
+        ride = await sync_to_async(Rides.objects.get)(id=self.ride_id)
+        await self.send(text_data=json.dumps({
+            'status': ride.status,
+            'message': f'Connected to ride {self.ride_id}. Current status: {ride.status}'
+        }))
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(
