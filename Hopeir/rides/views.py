@@ -106,16 +106,17 @@ class RideListView(generics.ListAPIView):
 class RideRequestCreateView(generics.CreateAPIView):
     queryset = RideRequest.objects.all()
     serializer_class = RideRequestCreateSerializer
+    permission_classes = [permissions.AllowAny]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         ride_request = serializer.save()
 
-        # Send WebSocket event
+        # Send WebSocket event to group
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
-            "ride_requests",
+            "ride_requests",  # Static group for broadcasting all ride requests
             {
                 "type": "ride_request_notification",
                 "payload": {
@@ -123,7 +124,7 @@ class RideRequestCreateView(generics.CreateAPIView):
                     "ride_id": ride_request.ride.id,
                     "request_id": ride_request.id,
                     "status": ride_request.status,
-                    "from_user": ride_request.from_user.id,
+                    "from_user": ride_request.from_user.user_id,  # use user_id here
                 }
             }
         )
@@ -137,21 +138,25 @@ class RideRequestCreateView(generics.CreateAPIView):
 # }
 
 
-class RideRequestRespondView(APIView):
-    def post(self, request, request_id):
-        try:
-            ride_request = RideRequest.objects.get(id=request_id)
-        except RideRequest.DoesNotExist:
-            return Response({"error": "Ride request not found"}, status=404)
+class RideRequestRespondView(generics.UpdateAPIView):
+    queryset = RideRequest.objects.all()
+    serializer_class = RideRequestCreateSerializer  # You can use a custom one too
+    permission_classes = [permissions.AllowAny]
 
-        status_value = request.data.get("status")
-        if status_value not in ["accepted", "rejected"]:
-            return Response({"error": "Invalid status. Must be 'accepted' or 'rejected'"}, status=400)
+    def update(self, request, *args, **kwargs):
+        ride_request = self.get_object()
 
-        ride_request.status = status_value
+        new_status = request.data.get("status")
+        if new_status not in ["accepted", "rejected"]:
+            return Response(
+                {"error": "Invalid status. Must be 'accepted' or 'rejected'"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        ride_request.status = new_status
         ride_request.save()
 
-        # Send WebSocket update
+        # WebSocket update
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
             "ride_requests",
@@ -162,12 +167,15 @@ class RideRequestRespondView(APIView):
                     "ride_id": ride_request.ride.id,
                     "request_id": ride_request.id,
                     "status": ride_request.status,
-                    "from_user": ride_request.from_user.id,
-                }
-            }
+                    "from_user": ride_request.from_user.user_id,
+                },
+            },
         )
 
-        return Response({"success": True, "status": ride_request.status})
+        return Response(
+            {"success": True, "status": ride_request.status},
+            status=status.HTTP_200_OK
+        )
 
 
 
