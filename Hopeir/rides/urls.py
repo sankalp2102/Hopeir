@@ -1,8 +1,7 @@
 from django.urls import path
-from .views import (RideCreateView,
-                    RideListView, RideRequestCreateView,
-                    RideRequestRespondView, RideFeedbackCreateView, 
-                    RideFeedbackListView, RideRequestListForDriverView)
+from .views import (RideCreateView, RideListView, RideRequestCreateView,
+                    RideRequestListForDriverView, RideRequestRespondView,
+                    RideFeedbackCreateView, RideFeedbackListView)
 urlpatterns = [
     path('create/', RideCreateView.as_view(), name='ride-create'),
     path('get/', RideListView.as_view(), name='ride-list'),

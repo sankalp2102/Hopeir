@@ -34,7 +34,7 @@ class RideRequest(models.Model):
     requested_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Ride {self.ride.id} ({self.status})"
+        return f"Ride {self.ride.id} ({self.status} and request id is {self.id} and send by {self.from_user.email}) and driver is {self.ride.user.email}"
     
 
 class RideFeedback(models.Model):

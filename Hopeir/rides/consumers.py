@@ -3,6 +3,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.utils.timezone import now
 from .models import Rides, RideRequest
 from asgiref.sync import sync_to_async
+from urllib.parse import parse_qs
 
 class RideActionConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -69,3 +70,42 @@ class RideActionConsumer(AsyncWebsocketConsumer):
             'message': event['message']
         }))
         
+
+class RideRequestConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        # Extract user_id from query string
+        query_string = self.scope["query_string"].decode()
+        user_id = parse_qs(query_string).get("user_id", [None])[0]
+
+        if not user_id:
+            await self.close(code=4000)
+            return
+
+        self.user_id = str(user_id)
+        self.group_name = f"user_{self.user_id}"
+
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        if hasattr(self, "group_name"):
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    async def receive(self, text_data):
+        # Echo incoming message (optional in testing)
+        await self.send(text_data=json.dumps({
+            "type": "echo",
+            "message": text_data
+        }))
+
+    async def ride_request_created(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "ride_request_created",
+            "data": event["data"]
+        }))
+
+    async def ride_request_updated(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "ride_request_updated",
+            "data": event["data"]
+        }))

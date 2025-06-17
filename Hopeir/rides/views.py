@@ -1,14 +1,16 @@
-from django.shortcuts import render
+from rest_framework.views import APIView
 from rest_framework.generics import GenericAPIView
 from rest_framework import mixins, status, generics
 from rest_framework.response import Response
 from .models import Rides, RideRequest, RideFeedback
 from .serializers import (RidesSerializer, RideRequestCreateSerializer, 
                           RideFeedbackSerializer, RideRequestListSerializer)
-from django.utils.timezone import now
 from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied
 from django.db.models import Q
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+channel_layer = get_channel_layer()
 
 
 class RideCreateView(mixins.CreateModelMixin, GenericAPIView):
@@ -104,15 +106,70 @@ class RideListView(generics.ListAPIView):
 class RideRequestCreateView(generics.CreateAPIView):
     queryset = RideRequest.objects.all()
     serializer_class = RideRequestCreateSerializer
-    permission_classes = [permissions.AllowAny]  # use IsAuthenticated later
 
-    def get_serializer_context(self):
-        return super().get_serializer_context()
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        ride_request = serializer.save()
+
+        # Send WebSocket event
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            "ride_requests",
+            {
+                "type": "ride_request_notification",
+                "payload": {
+                    "event": "request_created",
+                    "ride_id": ride_request.ride.id,
+                    "request_id": ride_request.id,
+                    "status": ride_request.status,
+                    "from_user": ride_request.from_user.id,
+                }
+            }
+        )
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
     
 # {
 #   "ride": 1,
 #   "from_user": 1
 # }
+
+
+class RideRequestRespondView(APIView):
+    def post(self, request, request_id):
+        try:
+            ride_request = RideRequest.objects.get(id=request_id)
+        except RideRequest.DoesNotExist:
+            return Response({"error": "Ride request not found"}, status=404)
+
+        status_value = request.data.get("status")
+        if status_value not in ["accepted", "rejected"]:
+            return Response({"error": "Invalid status. Must be 'accepted' or 'rejected'"}, status=400)
+
+        ride_request.status = status_value
+        ride_request.save()
+
+        # Send WebSocket update
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            "ride_requests",
+            {
+                "type": "ride_request_notification",
+                "payload": {
+                    "event": "request_responded",
+                    "ride_id": ride_request.ride.id,
+                    "request_id": ride_request.id,
+                    "status": ride_request.status,
+                    "from_user": ride_request.from_user.id,
+                }
+            }
+        )
+
+        return Response({"success": True, "status": ride_request.status})
+
+
 
 
 class RideRequestListForDriverView(generics.ListAPIView):
@@ -134,40 +191,6 @@ class RideRequestListForDriverView(generics.ListAPIView):
         ).distinct()
     
 
-
-class RideRequestRespondView(generics.GenericAPIView):
-    permission_classes = [permissions.AllowAny]  # Change to IsAuthenticated in production
-    serializer_class = None  # No serializer needed here, we handle data manually
-
-    def post(self, request, pk):
-        action = request.data.get('action')
-        user_id = request.data.get('user_id')
-
-        if not user_id:
-            return Response({"error": "user_id is required for testing."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Fetch the RideRequest object only if it belongs to the driver's ride
-        try:
-            ride_request = RideRequest.objects.get(id=pk, ride__user__user_id=user_id)
-        except RideRequest.DoesNotExist:
-            return Response({"error": "Ride request not found or unauthorized."}, status=status.HTTP_404_NOT_FOUND)
-
-        if ride_request.status != 'pending':
-            return Response({"error": "This request has already been responded to."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if action == 'accept':
-            if ride_request.ride.seats <= 0:
-                return Response({"error": "No seats available."}, status=status.HTTP_400_BAD_REQUEST)
-            ride_request.status = 'accepted'
-            ride_request.ride.seats -= 1
-            ride_request.ride.save()
-        elif action == 'reject':
-            ride_request.status = 'rejected'
-        else:
-            return Response({"error": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
-
-        ride_request.save()
-        return Response({"message": f"Request {action}ed successfully."}, status=status.HTTP_200_OK)
     
 # {
 #   "action": "accept",
