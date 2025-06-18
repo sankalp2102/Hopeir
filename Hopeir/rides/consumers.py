@@ -4,7 +4,7 @@ from django.utils.timezone import now
 from .models import Rides, RideRequest
 from asgiref.sync import sync_to_async
 from urllib.parse import parse_qs
-
+from datetime import datetime
 class RideActionConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.ride_id = self.scope['url_route']['kwargs']['ride_id']
@@ -79,7 +79,6 @@ class RideActionConsumer(AsyncWebsocketConsumer):
 
 class RideRequestConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        # Extract user_id from query string
         query_string = self.scope["query_string"].decode()
         user_id = parse_qs(query_string).get("user_id", [None])[0]
 
@@ -92,6 +91,31 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
 
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
+
+        await self.send(text_data=json.dumps({
+            "type": "connection",
+            "message": f"Connected to user group: {self.group_name}"
+        }))
+
+        # ✅ Format datetime to string before sending
+        raw_requests = await sync_to_async(list)(
+            RideRequest.objects.filter(from_user__user_id=user_id).values(
+                "id", "ride_id", "status", "requested_at"
+            )
+        )
+
+        formatted_requests = [
+            {
+                **req,
+                "requested_at": req["requested_at"].isoformat() if req["requested_at"] else None
+            }
+            for req in raw_requests
+        ]
+
+        await self.send(text_data=json.dumps({
+            "type": "initial_state",
+            "data": formatted_requests
+        }))
 
     async def disconnect(self, close_code):
         if hasattr(self, "group_name"):

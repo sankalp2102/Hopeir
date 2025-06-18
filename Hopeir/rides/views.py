@@ -10,6 +10,8 @@ from rest_framework.exceptions import PermissionDenied
 from django.db.models import Q
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
+from .utils import notify_ride_update, notify_user_about_request
+from datetime import datetime
 channel_layer = get_channel_layer()
 
 
@@ -113,23 +115,29 @@ class RideRequestCreateView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         ride_request = serializer.save()
 
-        # Send WebSocket event to group
-        channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            "ride_requests",  # Static group for broadcasting all ride requests
-            {
-                "type": "ride_request_notification",
-                "payload": {
-                    "event": "request_created",
-                    "ride_id": ride_request.ride.id,
-                    "request_id": ride_request.id,
-                    "status": ride_request.status,
-                    "from_user": ride_request.from_user.user_id,  # use user_id here
-                }
-            }
+        request_data = {
+            'request_id': ride_request.id,
+            'ride_id': ride_request.ride.id,
+            'from_user': {
+                'id': ride_request.from_user.user_id,
+                'name': ride_request.from_user.first_name
+            },
+            'status': 'pending',
+            'requested_at': str(ride_request.requested_at)
+        }
+
+        # Notify the driver
+        notify_user_about_request(
+            user_id=ride_request.ride.user.user_id,
+            request_data=request_data,
+            notification_type='created'
         )
 
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response({
+            "success": True,
+            "message": "Ride request created",
+            "data": request_data
+        }, status=status.HTTP_201_CREATED)
 
     
 # {
@@ -140,13 +148,13 @@ class RideRequestCreateView(generics.CreateAPIView):
 
 class RideRequestRespondView(generics.UpdateAPIView):
     queryset = RideRequest.objects.all()
-    serializer_class = RideRequestCreateSerializer  # You can use a custom one too
+    serializer_class = RideRequestCreateSerializer  # You can make a custom one if needed
     permission_classes = [permissions.AllowAny]
 
     def update(self, request, *args, **kwargs):
         ride_request = self.get_object()
-
         new_status = request.data.get("status")
+
         if new_status not in ["accepted", "rejected"]:
             return Response(
                 {"error": "Invalid status. Must be 'accepted' or 'rejected'"},
@@ -156,27 +164,37 @@ class RideRequestRespondView(generics.UpdateAPIView):
         ride_request.status = new_status
         ride_request.save()
 
-        # WebSocket update
-        channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            "ride_requests",
-            {
-                "type": "ride_request_notification",
-                "payload": {
-                    "event": "request_responded",
-                    "ride_id": ride_request.ride.id,
-                    "request_id": ride_request.id,
-                    "status": ride_request.status,
-                    "from_user": ride_request.from_user.user_id,
-                },
-            },
+        response_data = {
+            'request_id': ride_request.id,
+            'ride_id': ride_request.ride.id,
+            'status': ride_request.status,
+            'responded_at': str(datetime.now())
+        }
+
+        # Notify the passenger who made the request
+        notify_user_about_request(
+            user_id=ride_request.from_user.user_id,
+            request_data=response_data,
+            notification_type='updated'
         )
 
-        return Response(
-            {"success": True, "status": ride_request.status},
-            status=status.HTTP_200_OK
-        )
+        # If accepted, notify ride group (driver + other parties)
+        if ride_request.status == 'accepted':
+            ride = ride_request.ride
+            ride.status = 'accepted'
+            ride.save()
 
+            notify_ride_update(
+                ride_id=ride.id,
+                status=ride.status,
+                message='Ride request accepted'
+            )
+
+        return Response({
+            "success": True,
+            "message": f"Request {new_status} successfully",
+            "data": response_data
+        }, status=status.HTTP_200_OK)
 
 
 
