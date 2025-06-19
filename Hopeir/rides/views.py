@@ -122,7 +122,7 @@ class RideRequestCreateView(generics.CreateAPIView):
                 'id': ride_request.from_user.user_id,
                 'name': ride_request.from_user.first_name
             },
-            'status': 'pending',
+            'request_status': 'pending',
             'requested_at': str(ride_request.requested_at)
         }
 
@@ -137,7 +137,7 @@ class RideRequestCreateView(generics.CreateAPIView):
             "success": True,
             "message": "Ride request created",
             "data": request_data
-        }, status=status.HTTP_201_CREATED)
+        }, status=request_status.HTTP_201_CREATED)
 
     
 # {
@@ -148,12 +148,12 @@ class RideRequestCreateView(generics.CreateAPIView):
 
 class RideRequestRespondView(generics.UpdateAPIView):
     queryset = RideRequest.objects.all()
-    serializer_class = RideRequestCreateSerializer  # You can make a custom one if needed
+    serializer_class = RideRequestCreateSerializer
     permission_classes = [permissions.AllowAny]
 
     def update(self, request, *args, **kwargs):
         ride_request = self.get_object()
-        new_status = request.data.get("status")
+        new_status = request.data.get("request_status")  # also rename key here
 
         if new_status not in ["accepted", "rejected"]:
             return Response(
@@ -161,25 +161,23 @@ class RideRequestRespondView(generics.UpdateAPIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        ride_request.status = new_status
+        ride_request.request_status = new_status
         ride_request.save()
 
         response_data = {
             'request_id': ride_request.id,
             'ride_id': ride_request.ride.id,
-            'status': ride_request.status,
+            'request_status': ride_request.request_status,
             'responded_at': str(datetime.now())
         }
 
-        # Notify the passenger who made the request
         notify_user_about_request(
             user_id=ride_request.from_user.user_id,
             request_data=response_data,
             notification_type='updated'
         )
 
-        # If accepted, notify ride group (driver + other parties)
-        if ride_request.status == 'accepted':
+        if ride_request.request_status == 'accepted':
             ride = ride_request.ride
             ride.status = 'accepted'
             ride.save()
@@ -195,6 +193,7 @@ class RideRequestRespondView(generics.UpdateAPIView):
             "message": f"Request {new_status} successfully",
             "data": response_data
         }, status=status.HTTP_200_OK)
+
 
 
 

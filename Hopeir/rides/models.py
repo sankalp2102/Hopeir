@@ -30,7 +30,7 @@ class Rides(models.Model):
 class RideRequest(models.Model):
     ride = models.ForeignKey(Rides, on_delete=models.CASCADE, related_name='ride_requests')
     from_user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='ride_requests', null=True, blank=True)
-    status = models.CharField(max_length=20, choices=[('pending', 'Pending'), ('accepted', 'Accepted'), ('rejected', 'Rejected')], default='pending')
+    request_status = models.CharField(max_length=20, choices=[('pending', 'Pending'), ('accepted', 'Accepted'), ('rejected', 'Rejected')], default='pending')
     requested_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

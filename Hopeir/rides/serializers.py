@@ -26,7 +26,7 @@ class RideRequestListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = RideRequest
-        fields = ['id', 'ride_id', 'passenger_name', 'status', 'requested_at', 'from_user']
+        fields = ['id', 'ride_id', 'passenger_name', 'requested_at', 'from_user']
 
 
 class RideRequestUpdateSerializer(serializers.ModelSerializer):
