@@ -137,7 +137,7 @@ class RideRequestCreateView(generics.CreateAPIView):
             "success": True,
             "message": "Ride request created",
             "data": request_data
-        }, status=request_status.HTTP_201_CREATED)
+        }, status=status.HTTP_201_CREATED)
 
     
 # {
@@ -177,16 +177,16 @@ class RideRequestRespondView(generics.UpdateAPIView):
             notification_type='updated'
         )
 
-        if ride_request.request_status == 'accepted':
-            ride = ride_request.ride
-            ride.status = 'accepted'
-            ride.save()
+        # if ride_request.request_status == 'accepted':
+        #     ride = ride_request.ride
+        #     ride.status = 'accepted'
+        #     ride.save()
 
-            notify_ride_update(
-                ride_id=ride.id,
-                status=ride.status,
-                message='Ride request accepted'
-            )
+        #     notify_ride_update(
+        #         ride_id=ride.id,
+        #         status=ride.status,
+        #         message='Ride request accepted'
+        #     )
 
         return Response({
             "success": True,
