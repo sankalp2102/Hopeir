@@ -18,6 +18,15 @@ class RideActionConsumer(AsyncWebsocketConsumer):
         await self.accept()
         
         ride = await sync_to_async(Rides.objects.get)(id=self.ride_id)
+        
+        has_access = await sync_to_async(RideRequest.objects.filter(ride=ride, from_user__user_id=self.user_id, status='accepted').exists)()
+
+        if not has_access:
+            await self.send(text_data=json.dumps({
+                'error': 'Access denied. Only accepted users can control this ride.'
+        }))
+            return
+        
         await self.send(text_data=json.dumps({
             'status': ride.status,
             'message': f'Connected to ride {self.ride_id}. Current status: {ride.status}'

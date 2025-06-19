@@ -6,7 +6,7 @@ from fare.models import Fare
 class Rides(models.Model):
     STATUS_CHOICES = [
     ('pending', 'Pending'),
-    ('accepted', 'Accepted'),
+    # ('accepted', 'Accepted'),
     ('ongoing', 'Ongoing'),
     ('completed', 'Completed'),
     ('cancelled', 'Cancelled'),
