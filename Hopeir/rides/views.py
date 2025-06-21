@@ -146,53 +146,53 @@ class RideRequestCreateView(generics.CreateAPIView):
 # }
 
 
-class RideRequestRespondView(generics.UpdateAPIView):
-    queryset = RideRequest.objects.all()
-    serializer_class = RideRequestCreateSerializer
-    permission_classes = [permissions.AllowAny]
+# class RideRequestRespondView(generics.UpdateAPIView):
+#     queryset = RideRequest.objects.all()
+#     serializer_class = RideRequestCreateSerializer
+#     permission_classes = [permissions.AllowAny]
 
-    def update(self, request, *args, **kwargs):
-        ride_request = self.get_object()
-        new_status = request.data.get("request_status")  # also rename key here
+#     def update(self, request, *args, **kwargs):
+#         ride_request = self.get_object()
+#         new_status = request.data.get("request_status")  # also rename key here
 
-        if new_status not in ["accepted", "rejected"]:
-            return Response(
-                {"error": "Invalid status. Must be 'accepted' or 'rejected'"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+#         if new_status not in ["accepted", "rejected"]:
+#             return Response(
+#                 {"error": "Invalid status. Must be 'accepted' or 'rejected'"},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
 
-        ride_request.request_status = new_status
-        ride_request.save()
+#         ride_request.request_status = new_status
+#         ride_request.save()
 
-        response_data = {
-            'request_id': ride_request.id,
-            'ride_id': ride_request.ride.id,
-            'request_status': ride_request.request_status,
-            'responded_at': str(datetime.now())
-        }
+#         response_data = {
+#             'request_id': ride_request.id,
+#             'ride_id': ride_request.ride.id,
+#             'request_status': ride_request.request_status,
+#             'responded_at': str(datetime.now())
+#         }
 
-        notify_user_about_request(
-            user_id=ride_request.from_user.user_id,
-            request_data=response_data,
-            notification_type='updated'
-        )
+#         notify_user_about_request(
+#             user_id=ride_request.from_user.user_id,
+#             request_data=response_data,
+#             notification_type='updated'
+#         )
 
-        # if ride_request.request_status == 'accepted':
-        #     ride = ride_request.ride
-        #     ride.status = 'accepted'
-        #     ride.save()
+#         # if ride_request.request_status == 'accepted':
+#         #     ride = ride_request.ride
+#         #     ride.status = 'accepted'
+#         #     ride.save()
 
-        #     notify_ride_update(
-        #         ride_id=ride.id,
-        #         status=ride.status,
-        #         message='Ride request accepted'
-        #     )
+#         #     notify_ride_update(
+#         #         ride_id=ride.id,
+#         #         status=ride.status,
+#         #         message='Ride request accepted'
+#         #     )
 
-        return Response({
-            "success": True,
-            "message": f"Request {new_status} successfully",
-            "data": response_data
-        }, status=status.HTTP_200_OK)
+#         return Response({
+#             "success": True,
+#             "message": f"Request {new_status} successfully",
+#             "data": response_data
+#         }, status=status.HTTP_200_OK)
 
 
 

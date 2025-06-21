@@ -41,6 +41,9 @@ class RideRequestUpdateSerializer(serializers.ModelSerializer):
 
 
 class RideFeedbackSerializer(serializers.ModelSerializer):
+    
+    
+
     class Meta:
         model = RideFeedback
         fields = '__all__'

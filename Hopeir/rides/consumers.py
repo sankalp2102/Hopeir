@@ -109,7 +109,7 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             "message": f"Connected to user group: {self.group_name}"
         }))
 
-        # Send initial list of ride requests made by the user
+        # Send initial ride requests created by this user
         raw_requests = await sync_to_async(list)(
             RideRequest.objects.filter(from_user__user_id=user_id).values(
                 "id", "ride_id", "request_status", "requested_at"
@@ -134,10 +134,47 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
     async def receive(self, text_data):
-        await self.send(text_data=json.dumps({
-            "type": "echo",
-            "message": text_data
-        }))
+        data = json.loads(text_data)
+        action = data.get("action")  # 'accept' or 'reject'
+        request_id = data.get("request_id")
+
+        if action not in ["accept", "reject"] or not request_id:
+            await self.send(text_data=json.dumps({
+                "type": "error",
+                "message": "Invalid action or request_id"
+            }))
+            return
+
+        try:
+            ride_request = await sync_to_async(RideRequest.objects.get)(id=request_id)
+        except RideRequest.DoesNotExist:
+            await self.send(text_data=json.dumps({
+                "type": "error",
+                "message": "Ride request not found"
+            }))
+            return
+
+        ride_request.request_status = "accepted" if action == "accept" else "rejected"
+        await sync_to_async(ride_request.save)()
+
+        ride_id = await sync_to_async(lambda: ride_request.ride.id)()
+        requested_at = await sync_to_async(lambda: ride_request.requested_at.isoformat() if ride_request.requested_at else None)()
+
+        response_data = {
+            "id": ride_request.id,
+            "ride_id": ride_id,
+            "request_status": ride_request.request_status,
+            "requested_at": requested_at
+        }
+
+        # Broadcast update to the user
+        await self.channel_layer.group_send(
+            self.group_name,
+            {
+                "type": "ride_request_updated",
+                "data": response_data
+            }
+        )
 
     async def ride_request_created(self, event):
         await self.send(text_data=json.dumps({
