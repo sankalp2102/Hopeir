@@ -109,17 +109,21 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             "message": f"Connected to user group: {self.group_name}"
         }))
 
-        # Send initial ride requests created by this user
+        # Fetch all ride requests created by this user (e.g., passenger)
         raw_requests = await sync_to_async(list)(
-            RideRequest.objects.filter(from_user__user_id=user_id).values(
-                "id", "ride_id", "request_status", "requested_at"
+            RideRequest.objects.select_related("from_user").filter(
+                from_user__user_id=user_id
             )
         )
 
         formatted_requests = [
             {
-                **req,
-                "requested_at": req["requested_at"].isoformat() if req["requested_at"] else None
+                "id": req.id,
+                "ride_id": req.ride_id,
+                "request_status": req.request_status,
+                "requested_at": req.requested_at.isoformat() if req.requested_at else None,
+                "first_name": req.from_user.first_name,
+                "last_name": req.from_user.last_name
             }
             for req in raw_requests
         ]
@@ -128,10 +132,6 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             "type": "initial_state",
             "data": formatted_requests
         }))
-
-    async def disconnect(self, close_code):
-        if hasattr(self, "group_name"):
-            await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
     async def receive(self, text_data):
         data = json.loads(text_data)
@@ -146,7 +146,9 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             return
 
         try:
-            ride_request = await sync_to_async(RideRequest.objects.get)(id=request_id)
+            ride_request = await sync_to_async(
+                lambda: RideRequest.objects.select_related("from_user").get(id=request_id)
+            )()
         except RideRequest.DoesNotExist:
             await self.send(text_data=json.dumps({
                 "type": "error",
@@ -157,17 +159,18 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
         ride_request.request_status = "accepted" if action == "accept" else "rejected"
         await sync_to_async(ride_request.save)()
 
-        ride_id = await sync_to_async(lambda: ride_request.ride.id)()
-        requested_at = await sync_to_async(lambda: ride_request.requested_at.isoformat() if ride_request.requested_at else None)()
+        ride_id = ride_request.ride_id
+        requested_at = ride_request.requested_at.isoformat() if ride_request.requested_at else None
 
         response_data = {
             "id": ride_request.id,
             "ride_id": ride_id,
             "request_status": ride_request.request_status,
-            "requested_at": requested_at
+            "requested_at": requested_at,
+            "first_name": ride_request.from_user.first_name,
+            "last_name": ride_request.from_user.last_name
         }
 
-        # Broadcast update to the user
         await self.channel_layer.group_send(
             self.group_name,
             {
