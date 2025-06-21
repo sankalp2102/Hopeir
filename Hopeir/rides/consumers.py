@@ -122,8 +122,7 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
                 "ride_id": req.ride_id,
                 "request_status": req.request_status,
                 "requested_at": req.requested_at.isoformat() if req.requested_at else None,
-                "first_name": req.from_user.first_name,
-                "last_name": req.from_user.last_name
+                "passenger_name": req.from_user.first_name
             }
             for req in raw_requests
         ]
@@ -167,8 +166,7 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             "ride_id": ride_id,
             "request_status": ride_request.request_status,
             "requested_at": requested_at,
-            "first_name": ride_request.from_user.first_name,
-            "last_name": ride_request.from_user.last_name
+            "passenger_name": ride_request.from_user.first_name
         }
 
         await self.channel_layer.group_send(
