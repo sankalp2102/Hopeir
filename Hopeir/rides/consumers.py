@@ -109,10 +109,19 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             "message": f"Connected to user group: {self.group_name}"
         }))
 
-        # Fetch all ride requests created by this user (e.g., passenger)
-        raw_requests = await sync_to_async(list)(
-            RideRequest.objects.select_related("from_user").all()
-        )
+        # Fetch all ride requests: both sent by user and received on user's rides
+sent_requests_qs = RideRequest.objects.select_related("from_user", "ride").filter(
+    from_user__user_id=self.user_id
+)
+
+received_requests_qs = RideRequest.objects.select_related("from_user", "ride").filter(
+    ride__created_by__user_id=self.user_id
+)
+
+raw_requests = await sync_to_async(list)(
+    (sent_requests_qs | received_requests_qs).distinct().order_by("-requested_at")
+)
+
 
         formatted_requests = [
             {
