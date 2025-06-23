@@ -5,6 +5,8 @@ from .models import Rides, RideRequest
 from asgiref.sync import sync_to_async
 from urllib.parse import parse_qs
 from datetime import datetime
+from channels.db import database_sync_to_async
+
 class RideActionConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.ride_id = self.scope['url_route']['kwargs']['ride_id']
@@ -109,40 +111,20 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             "message": f"Connected to user group: {self.group_name}"
         }))
 
-        # Fetch all ride requests: both sent by user and received on user's rides
-sent_requests_qs = RideRequest.objects.select_related("from_user", "ride").filter(
-    from_user_id=self.user_id 
-)
-
-received_requests_qs = RideRequest.objects.select_related("from_user", "ride").filter(
-    ride__created_by_id=self.user_id 
-)
-
-raw_requests = await sync_to_async(list)(
-    (sent_requests_qs | received_requests_qs).distinct().order_by("-requested_at")
-)
-
-
-        formatted_requests = [
-            {
-                "id": req.id,
-                "ride_id": req.ride_id,
-                "request_status": req.request_status,
-                "requested_at": req.requested_at.isoformat() if req.requested_at else None,
-                "passenger_name": req.from_user.first_name,
-                "passenger_id": req.from_user.user_id,
-            }
-            for req in raw_requests
-        ]
+        # Fetch ride requests where user is sender or the ride creator
+        ride_requests = await self.get_relevant_requests(self.user_id)
 
         await self.send(text_data=json.dumps({
             "type": "initial_state",
-            "data": formatted_requests
+            "data": ride_requests
         }))
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
     async def receive(self, text_data):
         data = json.loads(text_data)
-        action = data.get("action")  # 'accept' or 'reject'
+        action = data.get("action")
         request_id = data.get("request_id")
 
         if action not in ["accept", "reject"] or not request_id:
@@ -152,37 +134,20 @@ raw_requests = await sync_to_async(list)(
             }))
             return
 
-        try:
-            ride_request = await sync_to_async(
-                lambda: RideRequest.objects.select_related("from_user").get(id=request_id)
-            )()
-        except RideRequest.DoesNotExist:
+        updated_request = await self.update_ride_request(request_id, action)
+        if not updated_request:
             await self.send(text_data=json.dumps({
                 "type": "error",
                 "message": "Ride request not found"
             }))
             return
 
-        ride_request.request_status = "accepted" if action == "accept" else "rejected"
-        await sync_to_async(ride_request.save)()
-
-        ride_id = ride_request.ride_id
-        requested_at = ride_request.requested_at.isoformat() if ride_request.requested_at else None
-
-        response_data = {
-            "id": ride_request.id,
-            "ride_id": ride_id,
-            "request_status": ride_request.request_status,
-            "requested_at": requested_at,
-            "passenger_name": ride_request.from_user.first_name,
-            "passenger_id": ride_request.from_user.user_id,
-        }
-
+        # Notify current user group with updated data
         await self.channel_layer.group_send(
             self.group_name,
             {
                 "type": "ride_request_updated",
-                "data": response_data
+                "data": updated_request
             }
         )
 
@@ -197,3 +162,44 @@ raw_requests = await sync_to_async(list)(
             "type": "ride_request_updated",
             "data": event["data"]
         }))
+
+    @database_sync_to_async
+    def get_relevant_requests(self, user_id):
+        sent_qs = RideRequest.objects.select_related("from_user", "ride").filter(
+            from_user__user_id=user_id
+        )
+        received_qs = RideRequest.objects.select_related("from_user", "ride").filter(
+            ride__created_by__user_id=user_id
+        )
+
+        combined_qs = (sent_qs | received_qs).distinct().order_by("-requested_at")
+
+        return [
+            {
+                "id": req.id,
+                "ride_id": req.ride_id,
+                "request_status": req.request_status,
+                "requested_at": req.requested_at.isoformat() if req.requested_at else None,
+                "passenger_id": req.from_user.user_id,
+                "passenger_name": f"{req.from_user.first_name} {req.from_user.last_name}",
+            }
+            for req in combined_qs
+        ]
+
+    @database_sync_to_async
+    def update_ride_request(self, request_id, action):
+        try:
+            ride_request = RideRequest.objects.select_related("from_user", "ride").get(id=request_id)
+            ride_request.request_status = "accepted" if action == "accept" else "rejected"
+            ride_request.save()
+
+            return {
+                "id": ride_request.id,
+                "ride_id": ride_request.ride_id,
+                "request_status": ride_request.request_status,
+                "requested_at": ride_request.requested_at.isoformat() if ride_request.requested_at else None,
+                "passenger_id": ride_request.from_user.user_id,
+                "passenger_name": f"{ride_request.from_user.first_name} {ride_request.from_user.last_name}",
+            }
+        except RideRequest.DoesNotExist:
+            return None
