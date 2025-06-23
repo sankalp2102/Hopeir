@@ -111,11 +111,11 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
 
         # Fetch all ride requests: both sent by user and received on user's rides
 sent_requests_qs = RideRequest.objects.select_related("from_user", "ride").filter(
-    from_user__user_id=self.user_id
+    from_user_id=self.user_id 
 )
 
 received_requests_qs = RideRequest.objects.select_related("from_user", "ride").filter(
-    ride__created_by__user_id=self.user_id
+    ride__created_by_id=self.user_id 
 )
 
 raw_requests = await sync_to_async(list)(
