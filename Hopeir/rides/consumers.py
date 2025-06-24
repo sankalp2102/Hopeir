@@ -146,7 +146,7 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data):
         data = json.loads(text_data)
-        action = data.get("action")  # 'accept' or 'reject'
+        action = data.get("action")
         request_id = data.get("request_id")
 
         if action not in ["accept", "reject"] or not request_id:
@@ -157,7 +157,9 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             return
 
         try:
-            ride_request = await sync_to_async(RideRequest.objects.select_related("from_user", "ride").get)(id=request_id)
+            ride_request = await sync_to_async(
+                RideRequest.objects.select_related("from_user", "ride", "ride__user").get
+            )(id=request_id)
         except RideRequest.DoesNotExist:
             await self.send(text_data=json.dumps({
                 "type": "error",
@@ -177,13 +179,18 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             "passenger_id": ride_request.from_user.user_id,
         }
 
-        await self.channel_layer.group_send(
-            self.group_name,
-            {
-                "type": "ride_request_updated",
-                "data": response_data
-            }
-        )
+        # Broadcast to both driver and passenger
+        driver_group = f"user_{ride_request.ride.user.user_id}"
+        passenger_group = f"user_{ride_request.from_user.user_id}"
+
+        for group in {driver_group, passenger_group}:
+            await self.channel_layer.group_send(
+                group,
+                {
+                    "type": "ride_request_updated",
+                    "data": response_data
+                }
+            )
 
     async def ride_request_created(self, event):
         await self.send(text_data=json.dumps({
