@@ -1,3 +1,4 @@
+import requests
 from rest_framework import generics, permissions, status
 from .serializers import CustomUserSerializer, VehicleProfileSerializer
 from .models import CustomUser, VehicleProfile
@@ -6,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
+from rest_framework.decorators import api_view, permission_classes
 
 
 class ProfileViewByEmail(generics.RetrieveUpdateAPIView):
@@ -76,3 +78,51 @@ class TestAPIView(generics.ListAPIView):
 
     def get(self, request, *args, **kwargs):
         return Response({"message": "Server is running successfully!"}, status=status.HTTP_200_OK)
+    
+    
+    
+SUPERTOKENS_API_KEY = "j6QpM=lb77rM7ge4XQmeZs2Qs3"
+SUPERTOKENS_CORE_URL = "https://st-dev-bbb51c70-4a16-11f0-8459-3185928d9a1b.aws.supertokens.io"
+
+def get_supertokens_user_id_by_email(email: str):
+    response = requests.get(
+        f"{SUPERTOKENS_CORE_URL}/users/by-email",
+        params={"email": email},
+        headers={
+            "api-key": SUPERTOKENS_API_KEY,
+            "Content-Type": "application/json"
+        }
+    )
+
+    if response.status_code == 200:
+        users = response.json().get("users", [])
+        if users:
+            return users[0]["userId"]
+    return None
+
+@api_view(["DELETE"])
+@permission_classes([permissions.IsAuthenticated])
+def delete_supertokens_user(request):
+    try:
+        email = request.user.email
+
+        user_id = get_supertokens_user_id_by_email(email)
+        if not user_id:
+            return Response({"error": "SuperTokens user not found."}, status=404)
+
+        delete_response = requests.post(
+            f"{SUPERTOKENS_CORE_URL}/recipe/user/remove",
+            headers={
+                "api-key": SUPERTOKENS_API_KEY,
+                "Content-Type": "application/json"
+            },
+            json={"userId": user_id}
+        )
+
+        if delete_response.status_code == 200:
+            return Response({"message": "SuperTokens user deleted successfully."})
+        else:
+            return Response({"error": "Failed to delete user from SuperTokens."}, status=500)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
