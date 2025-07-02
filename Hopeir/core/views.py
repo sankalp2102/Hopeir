@@ -5,10 +5,7 @@ from .models import CustomUser, VehicleProfile
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
-from rest_framework.decorators import api_view, permission_classes
-
 
 class ProfileViewByEmail(generics.RetrieveUpdateAPIView):
     serializer_class = CustomUserSerializer
@@ -84,32 +81,35 @@ class TestAPIView(generics.ListAPIView):
 SUPERTOKENS_API_KEY = "j6QpM=lb77rM7ge4XQmeZs2Qs3"
 SUPERTOKENS_CORE_URL = "https://st-dev-bbb51c70-4a16-11f0-8459-3185928d9a1b.aws.supertokens.io"
 
-def get_supertokens_user_id_by_email(email: str):
-    response = requests.get(
-        f"{SUPERTOKENS_CORE_URL}/users/by-email",
-        params={"email": email},
-        headers={
-            "api-key": SUPERTOKENS_API_KEY,
-            "Content-Type": "application/json"
-        }
-    )
+class DeleteSuperTokensUserView(APIView):
+    authentication_classes = []  # ⚠️ Disable auth for testing phase
+    permission_classes = []      # ⚠️ Disable auth for testing phase
 
-    if response.status_code == 200:
+    def post(self, request):
+        email = request.data.get("email")
+        if not email:
+            return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Fetch userId from SuperTokens
+        response = requests.get(
+            f"{SUPERTOKENS_CORE_URL}/users/by-email",
+            params={"email": email},
+            headers={
+                "api-key": SUPERTOKENS_API_KEY,
+                "Content-Type": "application/json"
+            }
+        )
+
+        if response.status_code != 200:
+            return Response({"error": "Failed to fetch user from SuperTokens"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         users = response.json().get("users", [])
-        if users:
-            return users[0]["userId"]
-    return None
+        if not users:
+            return Response({"error": "User not found in SuperTokens"}, status=status.HTTP_404_NOT_FOUND)
 
-@api_view(["DELETE"])
-@permission_classes([permissions.IsAuthenticated])
-def delete_supertokens_user(request):
-    try:
-        email = request.user.email
+        user_id = users[0]["userId"]
 
-        user_id = get_supertokens_user_id_by_email(email)
-        if not user_id:
-            return Response({"error": "SuperTokens user not found."}, status=404)
-
+        # Delete user by userId
         delete_response = requests.post(
             f"{SUPERTOKENS_CORE_URL}/recipe/user/remove",
             headers={
@@ -119,10 +119,7 @@ def delete_supertokens_user(request):
             json={"userId": user_id}
         )
 
-        if delete_response.status_code == 200:
-            return Response({"message": "SuperTokens user deleted successfully."})
-        else:
-            return Response({"error": "Failed to delete user from SuperTokens."}, status=500)
+        if delete_response.status_code != 200:
+            return Response({"error": "Failed to delete user from SuperTokens"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    except Exception as e:
-        return Response({"error": str(e)}, status=500)
+        return Response({"message": f"User with email '{email}' deleted from SuperTokens."}, status=status.HTTP_200_OK)
