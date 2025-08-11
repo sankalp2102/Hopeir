@@ -12,7 +12,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 from supertokens_python import init, InputAppInfo, SupertokensConfig
-from supertokens_python.recipe import emailpassword, session
+from supertokens_python.recipe import emailpassword, session, dashboard
 from supertokens_python import get_all_cors_headers
 from typing import List
 from corsheaders.defaults import default_headers
@@ -29,19 +29,20 @@ SECONDS_IN_100_DAYS = 100 * 24 * 60 * 60
 init(
     app_info=InputAppInfo(
         app_name="core",
-        api_domain="localhost://8000",
-        website_domain="localhost://8000",
+        api_domain="http://localhost:8000",
+        website_domain="http://localhost:3000",
         api_base_path="/auth",
         website_base_path="/auth"
     ),
     supertokens_config=SupertokensConfig(
-        connection_uri="https://st-dev-bbb51c70-4a16-11f0-8459-3185928d9a1b.aws.supertokens.io",
-        api_key = "j6QpM=lb77rM7ge4XQmeZs2Qs3"
+        connection_uri="http://34.122.56.250:3567",
+        # api_key = "j6QpM=lb77rM7ge4XQmeZs2Qs3"
     ),
     framework='django',
     recipe_list=[
         session.init(),
-        emailpassword.init()
+        emailpassword.init(),
+        dashboard.init(),
     ],
     mode='asgi'
 )
