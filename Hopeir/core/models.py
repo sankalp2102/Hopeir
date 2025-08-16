@@ -9,7 +9,7 @@ USER_ROLES = (
 )
 
 class CustomUser(AbstractUser):
-    user_id = models.AutoField(primary_key=True)
+    user_id = models.CharField(max_length=36, unique=True, primary_key=True)
     phone_number = models.CharField(max_length=15, unique=True, null=True)
     email = models.EmailField(unique=True)
     first_name = models.CharField(max_length=30, null=True, blank=True)

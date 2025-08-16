@@ -11,8 +11,6 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
-from supertokens_python import init, InputAppInfo, SupertokensConfig
-from supertokens_python.recipe import emailpassword, session, dashboard
 from supertokens_python import get_all_cors_headers
 from typing import List
 from corsheaders.defaults import default_headers
@@ -23,29 +21,6 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-SECONDS_IN_100_DAYS = 100 * 24 * 60 * 60
-
-
-init(
-    app_info=InputAppInfo(
-        app_name="core",
-        api_domain="http://localhost:8000",
-        website_domain="http://localhost:3000",
-        api_base_path="/auth",
-        website_base_path="/auth"
-    ),
-    supertokens_config=SupertokensConfig(
-        connection_uri="http://34.122.56.250:3567",
-        # api_key = "j6QpM=lb77rM7ge4XQmeZs2Qs3"
-    ),
-    framework='django',
-    recipe_list=[
-        session.init(),
-        emailpassword.init(),
-        dashboard.init(),
-    ],
-    mode='asgi'
-)
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -74,7 +49,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'drf_spectacular',
-    'core',
+    'core.apps.CoreConfig',
     'rides',
     'stations',
     'fare',
@@ -191,9 +166,18 @@ CORS_ALLOWED_ORIGINS = [
     "localhost://8000"
 ]
 
-CORS_ALLOW_HEADERS: List[str] = list(default_headers) + [
-    "Content-Type"
-] + get_all_cors_headers()
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "authorization",
+    "content-type",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+
+    # 👇 ADD THESE TWO HEADERS MANUALLY
+    "rid",
+    "anti-csrf",
+]
 
 CSRF_COOKIE_SECURE = False
 ALLOWED_HOSTS = ['*']

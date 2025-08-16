@@ -1,3 +1,4 @@
+from jsonschema import ValidationError
 import requests
 import supertokens_python
 from rest_framework import generics, permissions, status
@@ -33,9 +34,18 @@ class ProfileViewByUserId(generics.RetrieveAPIView):
     
 
     
-class ProfileCreateView(generics.CreateAPIView):
+class ProfileCreateView(generics.RetrieveUpdateAPIView):
     serializer_class = CustomUserSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.AllowAny] # Allow any request for testing
+
+    def get_object(self):
+        queryset = CustomUser.objects.all()
+        email = self.request.data.get('email')
+        
+        if not email:
+            raise ValidationError({'email': 'Email must be provided in the request body.'})
+        obj = get_object_or_404(queryset, email=email)
+        return obj
 
     
 

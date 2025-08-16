@@ -4,7 +4,10 @@ from .models import CustomUser, VehicleProfile
 class CustomUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = '__all__'
+        fields = [
+            'user_id', 'email', 'first_name', 'last_name', 'phone_number', 
+            'bio', 'role', 'date_of_birth', 'profile_picture', 'created_at'
+        ]
         
     
     def validate_email(self, value):
