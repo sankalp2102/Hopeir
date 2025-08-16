@@ -1,4 +1,5 @@
 import requests
+import supertokens_python
 from rest_framework import generics, permissions, status
 from .serializers import CustomUserSerializer, VehicleProfileSerializer
 from .models import CustomUser, VehicleProfile
@@ -6,6 +7,9 @@ from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
+from django.db import transaction
+from django.conf import settings
+from rest_framework.permissions import AllowAny
 
 class ProfileViewByEmail(generics.RetrieveUpdateAPIView):
     serializer_class = CustomUserSerializer
@@ -78,48 +82,58 @@ class TestAPIView(generics.ListAPIView):
     
     
     
-SUPERTOKENS_API_KEY = "j6QpM=lb77rM7ge4XQmeZs2Qs3"
-SUPERTOKENS_CORE_URL = "https://st-dev-bbb51c70-4a16-11f0-8459-3185928d9a1b.aws.supertokens.io"
+class DeleteUserByEmailView(APIView):
+    """
+    FOR TESTING ONLY. Deletes a user by email.
+    This endpoint is disabled when settings.DEBUG is False.
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    def delete(self, request):
+        # **SECURITY CHECK**: Only allow this function to run in DEBUG mode.
+        if not settings.DEBUG:
+            return Response({
+                "status": "error",
+                "message": "This endpoint is for testing only and is disabled in production."
+            }, status=status.HTTP_403_FORBIDDEN)
 
-class DeleteSuperTokensUserView(APIView):
-    authentication_classes = []  # ⚠️ Disable auth for testing phase
-    permission_classes = []      # ⚠️ Disable auth for testing phase
+        email = request.data.get('email')
 
-    def post(self, request):
-        email = request.data.get("email")
         if not email:
-            return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                "status": "error",
+                "message": "Email is required in the request body."
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Fetch userId from SuperTokens
-        response = requests.get(
-            f"{SUPERTOKENS_CORE_URL}/users/by-email",
-            params={"email": email},
-            headers={
-                "api-key": SUPERTOKENS_API_KEY,
-                "Content-Type": "application/json"
-            }
-        )
+        try:
+            # A transaction ensures the entire operation is atomic.
+            with transaction.atomic():
+                # Step 1: Find the user in your local database by their email.
+                user_to_delete = CustomUser.objects.get(email=email)
+                
+                # Step 2: Get their SuperTokens user_id from your local record.
+                user_id = user_to_delete.user_id
 
-        if response.status_code != 200:
-            return Response({"error": "Failed to fetch user from SuperTokens"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                # Step 3: Delete the user from the SuperTokens core using their ID.
+                supertokens_python.delete_user(user_id)
+                
+                # Step 4: Delete the user from your local Django database.
+                # This will also cascade and delete related VehicleProfile, etc.
+                user_to_delete.delete()
 
-        users = response.json().get("users", [])
-        if not users:
-            return Response({"error": "User not found in SuperTokens"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({
+                "status": "success",
+                "message": f"User with email '{email}' deleted successfully."
+            }, status=status.HTTP_200_OK)
 
-        user_id = users[0]["userId"]
-
-        # Delete user by userId
-        delete_response = requests.post(
-            f"{SUPERTOKENS_CORE_URL}/recipe/user/remove",
-            headers={
-                "api-key": SUPERTOKENS_API_KEY,
-                "Content-Type": "application/json"
-            },
-            json={"userId": user_id}
-        )
-
-        if delete_response.status_code != 200:
-            return Response({"error": "Failed to delete user from SuperTokens"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        return Response({"message": f"User with email '{email}' deleted from SuperTokens."}, status=status.HTTP_200_OK)
+        except CustomUser.DoesNotExist:
+            return Response({
+                "status": "error",
+                "message": f"User with email '{email}' not found."
+            }, status=status.HTTP_404_NOT_FOUND)
+            
+        except Exception as e:
+            return Response({
+                "status": "error",
+                "message": f"An unexpected error occurred: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
