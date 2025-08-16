@@ -1,6 +1,6 @@
-from jsonschema import ValidationError
-import requests
 import supertokens_python
+from django.db import transaction
+from jsonschema import ValidationError
 from rest_framework import generics, permissions, status
 from .serializers import CustomUserSerializer, VehicleProfileSerializer
 from .models import CustomUser, VehicleProfile
@@ -8,9 +8,10 @@ from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
-from django.db import transaction
 from django.conf import settings
 from rest_framework.permissions import AllowAny
+from asgiref.sync import async_to_sync
+from supertokens_python.asyncio import delete_user
 
 class ProfileViewByEmail(generics.RetrieveUpdateAPIView):
     serializer_class = CustomUserSerializer
@@ -94,12 +95,13 @@ class TestAPIView(generics.ListAPIView):
     
 class DeleteUserByEmailView(APIView):
     """
-    FOR TESTING ONLY. Deletes a user from the local Django DB only.
-    The user record in SuperTokens remains untouched.
+    FOR TESTING ONLY. Deletes a user from both SuperTokens
+    and the local Django DB using their email.
     """
     authentication_classes = []
     permission_classes = [AllowAny]
 
+    # 👇 2. Change the method back to a synchronous 'def'
     def delete(self, request):
         if not settings.DEBUG:
             return Response({
@@ -116,22 +118,19 @@ class DeleteUserByEmailView(APIView):
 
         try:
             with transaction.atomic():
-                # Step 1: Find the user in your local database by their email.
+                # Database calls can now be synchronous again
                 user_to_delete = CustomUser.objects.get(email=email)
-                
-                # Step 2: Get their SuperTokens user_id.
-                # We no longer need this for deletion, but it's good practice to be aware of it.
-                
+                user_id = user_to_delete.user_id
 
-                # STEP REMOVED: The call to delete the user from SuperTokens is now gone.
-                # supertokens_python.delete_user(user_id)
+                # 👇 3. Wrap the async delete_user call in async_to_sync
+                async_to_sync(delete_user)(user_id)
                 
-                # Step 3: Delete the user from your local Django database.
+                # This database call is also synchronous
                 user_to_delete.delete()
 
             return Response({
                 "status": "success",
-                "message": f"User with email '{email}' deleted successfully from the local DB only."
+                "message": f"User with email '{email}' deleted successfully from SuperTokens and the local DB."
             }, status=status.HTTP_200_OK)
 
         except CustomUser.DoesNotExist:
