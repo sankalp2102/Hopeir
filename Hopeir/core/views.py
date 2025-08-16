@@ -84,21 +84,20 @@ class TestAPIView(generics.ListAPIView):
     
 class DeleteUserByEmailView(APIView):
     """
-    FOR TESTING ONLY. Deletes a user by email.
-    This endpoint is disabled when settings.DEBUG is False.
+    FOR TESTING ONLY. Deletes a user from the local Django DB only.
+    The user record in SuperTokens remains untouched.
     """
     authentication_classes = []
     permission_classes = [AllowAny]
+
     def delete(self, request):
-        # **SECURITY CHECK**: Only allow this function to run in DEBUG mode.
         if not settings.DEBUG:
             return Response({
                 "status": "error",
                 "message": "This endpoint is for testing only and is disabled in production."
             }, status=status.HTTP_403_FORBIDDEN)
-
+        
         email = request.data.get('email')
-
         if not email:
             return Response({
                 "status": "error",
@@ -106,24 +105,23 @@ class DeleteUserByEmailView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # A transaction ensures the entire operation is atomic.
             with transaction.atomic():
                 # Step 1: Find the user in your local database by their email.
                 user_to_delete = CustomUser.objects.get(email=email)
                 
-                # Step 2: Get their SuperTokens user_id from your local record.
-                user_id = user_to_delete.user_id
-
-                # Step 3: Delete the user from the SuperTokens core using their ID.
-                supertokens_python.delete_user(user_id)
+                # Step 2: Get their SuperTokens user_id.
+                # We no longer need this for deletion, but it's good practice to be aware of it.
                 
-                # Step 4: Delete the user from your local Django database.
-                # This will also cascade and delete related VehicleProfile, etc.
+
+                # STEP REMOVED: The call to delete the user from SuperTokens is now gone.
+                # supertokens_python.delete_user(user_id)
+                
+                # Step 3: Delete the user from your local Django database.
                 user_to_delete.delete()
 
             return Response({
                 "status": "success",
-                "message": f"User with email '{email}' deleted successfully."
+                "message": f"User with email '{email}' deleted successfully from the local DB only."
             }, status=status.HTTP_200_OK)
 
         except CustomUser.DoesNotExist:
