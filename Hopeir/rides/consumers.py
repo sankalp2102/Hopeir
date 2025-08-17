@@ -100,7 +100,7 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             await self.close(code=4000)
             return
 
-        self.user_id = int(user_id)
+        self.user_id = user_id
         self.group_name = f"user_{self.user_id}"
 
         await self.channel_layer.group_add(self.group_name, self.channel_name)
