@@ -24,6 +24,7 @@ urlpatterns = [
     path('rides/', include('rides.urls')),
     path('stations/', include('stations.urls')),
     path('fare/', include('fare.urls')),
+    path('poster/', include('poster.urls')),
     path('model-data/', include('modeldata.urls')),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/schema/swagger-ui/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
