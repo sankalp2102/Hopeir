@@ -49,3 +49,19 @@ class RideFeedback(models.Model):
         return f"Feedback for Ride id {self.ride.id} ,feedback id is {self.id}"
     
     
+class RideChatMessage(models.Model):
+    ride = models.ForeignKey(
+        Rides,
+        on_delete=models.CASCADE,
+        related_name="chat_messages"
+    )
+    sender = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name="sent_ride_messages"
+    )
+    message = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Ride {self.ride.id} | {self.sender.user_id}"

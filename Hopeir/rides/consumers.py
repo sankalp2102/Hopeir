@@ -92,12 +92,13 @@ class RideActionConsumer(AsyncWebsocketConsumer):
         
 
 class RideRequestConsumer(AsyncWebsocketConsumer):
+
     async def connect(self):
         query_string = self.scope["query_string"].decode()
         user_id = parse_qs(query_string).get("user_id", [None])[0]
 
         if not user_id:
-            await self.close(code=4000)
+            await self.close()
             return
 
         self.user_id = user_id
@@ -106,43 +107,51 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
 
-        await self.send(text_data=json.dumps({
-            "type": "connection",
-            "message": f"Connected to user group: {self.group_name}"
-        }))
-
-        ride_requests = await self.get_relevant_requests(self.user_id)
+        requests = await self.get_relevant_requests(self.user_id)
 
         await self.send(text_data=json.dumps({
             "type": "initial_state",
-            "data": ride_requests
+            "data": requests
         }))
 
-    @sync_to_async
-    def get_relevant_requests(self, user_id):
-        sent_qs = RideRequest.objects.select_related("from_user", "ride", "ride__user").filter(
-            from_user__user_id=user_id
-        )
-        received_qs = RideRequest.objects.select_related("from_user", "ride", "ride__user").filter(
-            ride__user__user_id=user_id
-        )
+    @database_sync_to_async
+    def process_request_action(self, request_id, action):
+        from django.db import transaction
 
-        combined = (sent_qs | received_qs).distinct().order_by("-requested_at")
+        with transaction.atomic():
+            req = RideRequest.objects.select_for_update().select_related(
+                "ride", "from_user", "ride__user"
+            ).get(id=request_id)
 
-        return [
-            {
-                "id": req.id,
-                "ride_id": req.ride.id,
-                "request_status": req.request_status,
-                "requested_at": req.requested_at.isoformat() if req.requested_at else None,
-                "passenger_name": f"{req.from_user.first_name or ''} {req.from_user.last_name or ''}".strip(),
-                "passenger_id": req.from_user.user_id,
-            }
-            for req in combined
-        ]
+            ride = req.ride
 
-    async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(self.group_name, self.channel_name)
+            if ride.status in ["ongoing", "completed", "cancelled"]:
+                raise ValueError("Ride is no longer accepting requests")
+
+            if req.request_status != "pending":
+                raise ValueError("Request already processed")
+
+            if action == "accept":
+                if ride.seats <= 0:
+                    raise ValueError("No seats available")
+
+                req.request_status = "accepted"
+                ride.seats -= 1
+                ride.save()
+
+                if ride.seats == 0:
+                    RideRequest.objects.filter(
+                        ride=ride,
+                        request_status="pending"
+                    ).update(request_status="rejected")
+
+            elif action == "reject":
+                req.request_status = "rejected"
+            else:
+                raise ValueError("Invalid action")
+
+            req.save()
+            return req
 
     async def receive(self, text_data):
         data = json.loads(text_data)
@@ -150,36 +159,28 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
         request_id = data.get("request_id")
 
         if action not in ["accept", "reject"] or not request_id:
-            await self.send(text_data=json.dumps({
+            await self.send(json.dumps({
                 "type": "error",
                 "message": "Invalid action or request_id"
             }))
             return
 
         try:
-            ride_request = await sync_to_async(
-                RideRequest.objects.select_related("from_user", "ride", "ride__user").get
-            )(id=request_id)
-        except RideRequest.DoesNotExist:
-            await self.send(text_data=json.dumps({
+            ride_request = await self.process_request_action(request_id, action)
+        except ValueError as e:
+            await self.send(json.dumps({
                 "type": "error",
-                "message": "Ride request not found"
+                "message": str(e)
             }))
             return
-
-        ride_request.request_status = "accepted" if action == "accept" else "rejected"
-        await sync_to_async(ride_request.save)()
 
         response_data = {
             "id": ride_request.id,
             "ride_id": ride_request.ride.id,
             "request_status": ride_request.request_status,
-            "requested_at": ride_request.requested_at.isoformat() if ride_request.requested_at else None,
-            "passenger_name": f"{ride_request.from_user.first_name or ''} {ride_request.from_user.last_name or ''}".strip(),
             "passenger_id": ride_request.from_user.user_id,
         }
 
-        # Broadcast to both driver and passenger
         driver_group = f"user_{ride_request.ride.user.user_id}"
         passenger_group = f"user_{ride_request.from_user.user_id}"
 
@@ -191,12 +192,6 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
                     "data": response_data
                 }
             )
-
-    async def ride_request_created(self, event):
-        await self.send(text_data=json.dumps({
-            "type": "ride_request_created",
-            "data": event["data"]
-        }))
 
     async def ride_request_updated(self, event):
         await self.send(text_data=json.dumps({

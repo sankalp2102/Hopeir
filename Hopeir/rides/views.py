@@ -28,15 +28,16 @@ class RideListView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny]
     
     def get_queryset(self):
-        queryset = Rides.objects.all()
+        queryset = Rides.objects.select_related("user", "vehicle")
+
         user_id = self.request.query_params.get('user_id')
         ride_id = self.request.query_params.get('ride_id')
 
         if user_id:
-            queryset = queryset.filter(user_id=user_id)
+            queryset = queryset.filter(user__user_id=user_id)
+
         if ride_id:
             queryset = queryset.filter(id=ride_id)
-
         return queryset
 
 
@@ -113,6 +114,16 @@ class RideRequestCreateView(generics.CreateAPIView):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
+        ride = serializer.validated_data['ride']
+        from_user = serializer.validated_data['from_user']
+
+        if ride.user == from_user:
+            return Response(
+                {"error": "You cannot request your own ride"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         ride_request = serializer.save()
 
         request_data = {
@@ -126,13 +137,11 @@ class RideRequestCreateView(generics.CreateAPIView):
             'requested_at': str(ride_request.requested_at)
         }
 
-        # Notify the driver
         notify_user_about_request(
             user_id=ride_request.ride.user.user_id,
             request_data=request_data,
             notification_type='created'
         )
-
         return Response({
             "success": True,
             "message": "Ride request created",
@@ -206,14 +215,10 @@ class RideRequestListForDriverView(generics.ListAPIView):
         if not user_id:
             return RideRequest.objects.none()
 
-        try:
-            user_id = int(user_id)  # Ensure it's an integer
-        except ValueError:
-            return RideRequest.objects.none()
-
         return RideRequest.objects.filter(
-            Q(from_user__user_id=user_id) | Q(ride__user__user_id=user_id)
-        ).distinct()
+            Q(from_user__user_id=user_id) |
+            Q(ride__user__user_id=user_id)
+        ).select_related("from_user", "ride", "ride__user").distinct()
     
 
     
@@ -236,19 +241,19 @@ class RideFeedbackListView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        queryset = RideFeedback.objects.all()
+        queryset = RideFeedback.objects.select_related("ride", "from_user", "to_user")
 
         ride_id = self.request.query_params.get('ride_id')
-        from_user_id = self.request.query_params.get('from_user')
-        to_user_id = self.request.query_params.get('to_user')
+        from_user_id = self.request.query_params.get('from_user_id')
+        to_user_id = self.request.query_params.get('to_user_id')
 
         if ride_id:
             queryset = queryset.filter(ride_id=ride_id)
 
         if from_user_id:
-            queryset = queryset.filter(from_user_id=from_user_id)
+            queryset = queryset.filter(from_user__user_id=from_user_id)
 
         if to_user_id:
-            queryset = queryset.filter(to_user_id=to_user_id)
+            queryset = queryset.filter(to_user__user_id=to_user_id)
 
         return queryset

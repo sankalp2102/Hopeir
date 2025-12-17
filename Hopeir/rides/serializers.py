@@ -15,8 +15,19 @@ class RideRequestCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         ride = attrs['ride']
+        from_user = attrs['from_user']
+
+        if RideRequest.objects.filter(
+            ride=ride,
+            from_user=from_user
+        ).exists():
+            raise serializers.ValidationError(
+                "You have already requested this ride"
+            )
+
         if ride.seats <= 0:
-            raise serializers.ValidationError("No seats available.")
+            raise serializers.ValidationError("No seats available")
+
         return attrs
 
 
@@ -32,24 +43,23 @@ class RideRequestListSerializer(serializers.ModelSerializer):
 class RideRequestUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = RideRequest
-        fields = ['status']
+        fields = ['request_status']
 
     def validate(self, attrs):
-        # if attrs['status'] not in ['accepted', 'rejected']:
-        #     raise serializers.ValidationError("Invalid status.")
+        if attrs['request_status'] not in ['accepted', 'rejected']:
+            raise serializers.ValidationError("Invalid request status")
         return attrs
 
 
 class RideFeedbackSerializer(serializers.ModelSerializer):
-    
-    
-
     class Meta:
         model = RideFeedback
         fields = '__all__'
         read_only_fields = ['id', 'created_at']
 
-    # def validate(self, data):
-    #     if data['from_user'] == data['to_user']:
-    #         raise serializers.ValidationError("You cannot give feedback to yourself.")
-    #     return data
+    def validate(self, data):
+        if data['from_user'] == data['to_user']:
+            raise serializers.ValidationError(
+                "You cannot give feedback to yourself"
+            )
+        return data
