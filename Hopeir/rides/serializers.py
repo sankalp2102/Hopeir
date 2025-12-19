@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Rides, RideRequest, RideFeedback
+from .models import Rides, RideRequest, RideFeedback, RideChatMessage
 
 class RidesSerializer(serializers.ModelSerializer):
     class Meta:
@@ -63,3 +63,9 @@ class RideFeedbackSerializer(serializers.ModelSerializer):
                 "You cannot give feedback to yourself"
             )
         return data
+
+class RideChatMessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RideChatMessage
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at']

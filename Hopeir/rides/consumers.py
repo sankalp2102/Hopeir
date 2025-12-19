@@ -1,45 +1,57 @@
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.utils.timezone import now
-from .models import Rides, RideRequest
+from .models import Rides, RideRequest, RideChatMessage
 from asgiref.sync import sync_to_async
 from urllib.parse import parse_qs
 from datetime import datetime
 from channels.db import database_sync_to_async
 
 class RideActionConsumer(AsyncWebsocketConsumer):
+
     async def connect(self):
         self.ride_id = self.scope['url_route']['kwargs']['ride_id']
         self.room_group_name = f'ride_{self.ride_id}'
 
-        # Optional: extract user_id from query string if access control is needed
         query_string = self.scope["query_string"].decode()
         self.user_id = parse_qs(query_string).get("user_id", [None])[0]
+
+        if not self.user_id:
+            await self.close()
+            return
+
+        # ✅ Fetch ride AND driver in one DB hit
+        ride = await sync_to_async(
+            Rides.objects.select_related("user").get
+        )(id=self.ride_id)
+
+        # ✅ Safe: user is already loaded, no extra DB call
+        is_driver = str(ride.user.user_id) == str(self.user_id)
+
+        # ✅ Check accepted passenger safely
+        is_accepted = await sync_to_async(
+            RideRequest.objects.filter(
+                ride=ride,
+                from_user__user_id=self.user_id,
+                request_status="accepted"
+            ).exists
+        )()
+
+        if not (is_driver or is_accepted):
+            await self.close()
+            return
+
+        self.is_driver = is_driver
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
-        ride = await sync_to_async(Rides.objects.get)(id=self.ride_id)
-
-        # Optional: uncomment if access control is needed
-        # has_access = await sync_to_async(RideRequest.objects.filter(
-        #     ride=ride,
-        #     from_user__user_id=self.user_id,
-        #     request_status='accepted'
-        # ).exists)()
-        # if not has_access:
-        #     await self.send(text_data=json.dumps({
-        #         'error': 'Access denied. Only accepted users can control this ride.'
-        #     }))
-        #     return
-
+        # ✅ Frontend contract unchanged
         await self.send(text_data=json.dumps({
-            'status': ride.status,
-            'message': f'Connected to ride {self.ride_id}. Current status: {ride.status}'
+            "status": ride.status,
+            "message": f"Connected to ride {self.ride_id}. Current status: {ride.status}"
         }))
 
-    async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
     async def receive(self, text_data):
         data = json.loads(text_data)
@@ -47,48 +59,117 @@ class RideActionConsumer(AsyncWebsocketConsumer):
 
         ride = await sync_to_async(Rides.objects.get)(id=self.ride_id)
 
-        if ride.status in ['completed', 'cancelled']:
-            await self.send(text_data=json.dumps({
-                'error': f'Ride is already {ride.status}'
-            }))
-            return
+        # ---------- EXISTING RIDE ACTIONS (UNCHANGED OUTPUT) ----------
+        if action in ['start', 'end', 'cancel']:
 
-        if action == 'start':
-            ride.status = 'ongoing'
-            ride.start_time = now()
-        elif action == 'end':
-            if ride.status != 'ongoing':
-                await self.send(text_data=json.dumps({'error': 'Cannot end ride unless it is ongoing'}))
+            if not self.is_driver:
+                return  # silent ignore, frontend-safe
+
+            if ride.status in ['completed', 'cancelled']:
+                await self.send(text_data=json.dumps({
+                    'error': f'Ride is already {ride.status}'
+                }))
                 return
-            ride.status = 'completed'
-            ride.end_time = now()
-        elif action == 'cancel':
-            ride.status = 'cancelled'
-        else:
-            await self.send(text_data=json.dumps({'error': 'Invalid action'}))
+
+            if action == 'start':
+                if ride.status != 'pending':
+                    return
+                ride.status = 'ongoing'
+                ride.start_time = now()
+
+            elif action == 'end':
+                if ride.status != 'ongoing':
+                    await self.send(text_data=json.dumps({
+                        'error': 'Cannot end ride unless it is ongoing'
+                    }))
+                    return
+                ride.status = 'completed'
+                ride.end_time = now()
+
+            elif action == 'cancel':
+                ride.status = 'cancelled'
+
+            await sync_to_async(ride.save)()
+
+            await sync_to_async(
+                RideRequest.objects.filter(
+                    ride=ride,
+                    request_status='pending'
+                ).update
+            )(request_status='rejected')
+
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'ride_status_update',
+                    'status': ride.status,
+                    'message': f'Ride {action}ed successfully'
+                }
+            )
             return
 
-        await sync_to_async(ride.save)()
+        # ---------- NEW: CHAT MESSAGE ----------
+        if action == 'chat':
+            message = data.get('message')
+            if not message:
+                return
 
-        # Reject all remaining pending requests
-        await sync_to_async(
-            RideRequest.objects.filter(ride=ride, request_status='pending').update
-        )(request_status='rejected')
+            chat = await sync_to_async(RideChatMessage.objects.create)(
+                ride=ride,
+                sender_id=self.user_id,
+                message=message
+            )
 
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                'type': 'ride_status_update',
-                'status': ride.status,
-                'message': f'Ride {action}ed successfully'
-            }
-        )
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'chat_message',
+                    'message': chat.message,
+                    'sender_id': self.user_id,
+                    'timestamp': chat.created_at.isoformat()
+                }
+            )
+            return
+
+        # ---------- NEW: DRIVER LOCATION ----------
+        if action == 'location_update':
+            if not self.is_driver:
+                return
+
+            latitude = data.get('latitude')
+            longitude = data.get('longitude')
+
+            if latitude is None or longitude is None:
+                return
+
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'driver_location',
+                    'latitude': latitude,
+                    'longitude': longitude
+                }
+            )
+            return
 
     async def ride_status_update(self, event):
+        await self.send(text_data=json.dumps(event))
+
+    async def chat_message(self, event):
         await self.send(text_data=json.dumps({
-            'status': event['status'],
-            'message': event['message']
+            'type': 'chat_message',
+            'message': event['message'],
+            'sender_id': event['sender_id'],
+            'timestamp': event['timestamp']
         }))
+
+    async def driver_location(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'driver_location',
+            'latitude': event['latitude'],
+            'longitude': event['longitude']
+        }))
+
         
 
 class RideRequestConsumer(AsyncWebsocketConsumer):
