@@ -22,5 +22,5 @@ pip install -r requirements.txt
 
 ```
 cd Hopeir
-python3 manage.py runserver
+uvicorn Hopeir.asgi:application --reload
 ```
