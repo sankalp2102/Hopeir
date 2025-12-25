@@ -111,7 +111,7 @@ class RideActionConsumer(AsyncWebsocketConsumer):
             )
             return
 
-        # ---------- NEW: CHAT MESSAGE ----------
+        # ---------- NEW: CHAT MESSAGE ---------
         if action == "chat":
             message = data.get("message")
             if not message:
