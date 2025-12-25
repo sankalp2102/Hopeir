@@ -1,13 +1,9 @@
-from email.mime import message
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.utils.timezone import now
-
-from Hopeir.core.models import CustomUser
-from .models import Rides, RideRequest, RideChatMessage
+from .models import Rides, RideRequest, RideChatMessage, CustomUser
 from asgiref.sync import sync_to_async
 from urllib.parse import parse_qs
-from datetime import datetime
 from channels.db import database_sync_to_async
 
 class RideActionConsumer(AsyncWebsocketConsumer):
