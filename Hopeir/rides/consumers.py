@@ -1,6 +1,9 @@
+from email.mime import message
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.utils.timezone import now
+
+from Hopeir.core.models import CustomUser
 from .models import Rides, RideRequest, RideChatMessage
 from asgiref.sync import sync_to_async
 from urllib.parse import parse_qs
@@ -109,27 +112,31 @@ class RideActionConsumer(AsyncWebsocketConsumer):
             return
 
         # ---------- NEW: CHAT MESSAGE ----------
-        if action == 'chat':
-            message = data.get('message')
+        if action == "chat":
+            message = data.get("message")
             if not message:
                 return
 
-            chat = await sync_to_async(RideChatMessage.objects.create)(
-                ride=ride,
-                sender_id=self.user_id,
-                message=message
-            )
+        sender = await sync_to_async(CustomUser.objects.get)(user_id=self.user_id)
 
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    'type': 'chat_message',
-                    'message': chat.message,
-                    'sender_id': self.user_id,
-                    'timestamp': chat.created_at.isoformat()
-                }
-            )
-            return
+        chat = await sync_to_async(RideChatMessage.objects.create)(
+            ride=ride,
+            sender=sender,
+            message=message
+        )
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "chat_message",
+                "message": chat.message,
+                "sender": {
+                    "id": sender.user_id,
+                    "name": sender.first_name,
+                },
+                "timestamp": chat.created_at.isoformat()
+            }
+        )
 
         # ---------- NEW: DRIVER LOCATION ----------
         if action == 'location_update':
