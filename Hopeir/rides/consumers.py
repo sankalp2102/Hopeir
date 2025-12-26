@@ -49,6 +49,7 @@ class RideActionConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
 
+        # 🔹 EXISTING CONNECTION PAYLOAD
         await self.send(
             text_data=json.dumps(
                 {
@@ -56,6 +57,40 @@ class RideActionConsumer(AsyncWebsocketConsumer):
                     "ride_id": self.ride_id,
                     "status": self.ride.status,
                     "role": "driver" if self.is_driver else "passenger",
+                }
+            )
+        )
+
+        # =====================================================
+        # SEND CHAT HISTORY ON CONNECT
+        # =====================================================
+
+        chat_history = await sync_to_async(list)(
+            RideChatMessage.objects.filter(ride=self.ride)
+            .select_related("sender")
+            .order_by("created_at")
+            .values(
+                "id",
+                "message",
+                "created_at",
+                "sender__user_id",
+            )
+        )
+
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "type": "chat_history",
+                    "ride_id": self.ride_id,
+                    "messages": [
+                        {
+                            "id": chat["id"],
+                            "message": chat["message"],
+                            "timestamp": chat["created_at"].isoformat(),
+                            "sender_id": chat["sender__user_id"],
+                        }
+                        for chat in chat_history
+                    ],
                 }
             )
         )
@@ -82,7 +117,6 @@ class RideActionConsumer(AsyncWebsocketConsumer):
             await self._handle_location_update(data)
             return
 
-        # Unknown or unsupported action → ignore safely
         return
 
     # ===================== CHAT =====================
@@ -216,6 +250,7 @@ class RideActionConsumer(AsyncWebsocketConsumer):
             self.room_group_name,
             self.channel_name,
         )
+
 
 
         
