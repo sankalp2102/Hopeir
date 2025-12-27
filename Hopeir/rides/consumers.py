@@ -256,10 +256,17 @@ class RideActionConsumer(AsyncWebsocketConsumer):
 
 
         
-
 class RideRequestConsumer(AsyncWebsocketConsumer):
+    """
+    Handles real-time ride request lifecycle:
+    - Initial request list on connect
+    - Accept / Reject by driver
+    - Real-time updates to driver & passenger
+    """
 
+    # ======================================================
     # CONNECT
+    # ======================================================
     async def connect(self):
         query_string = self.scope.get("query_string", b"").decode()
         self.user_id = parse_qs(query_string).get("user_id", [None])[0]
@@ -277,7 +284,7 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
 
-        # 🔹 Send initial state
+        # Send initial state
         requests = await self.get_relevant_requests(self.user_id)
 
         await self.send(text_data=json.dumps({
@@ -285,8 +292,9 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             "data": requests
         }))
 
+    # ======================================================
     # RECEIVE (ROUTER)
-
+    # ======================================================
     async def receive(self, text_data):
         try:
             data = json.loads(text_data)
@@ -345,7 +353,12 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
     # ======================================================
     @database_sync_to_async
     def get_relevant_requests(self, user_id):
-        requests = (
+        """
+        Fetch all ride requests relevant to the user.
+        Driver → requests for their rides
+        Passenger → requests they sent
+        """
+        qs = (
             RideRequest.objects
             .select_related("ride", "from_user", "ride__user")
             .filter(
@@ -364,30 +377,32 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             )
         )
 
-    # ✅ Convert datetime → ISO string
+        # Convert datetime → JSON-safe string
         return [
             {
-                **req,
-                "requested_at": req["requested_at"].isoformat()
-                if req["requested_at"] else None
+                **row,
+                "requested_at": row["requested_at"].isoformat()
+                if row["requested_at"] else None
             }
-            for req in requests
+            for row in qs
         ]
 
     @database_sync_to_async
     def process_request_action(self, request_id, action, user_id):
         """
         Accept or reject a ride request.
-        Only the driver of the ride can do this.
+        Only the driver of the ride can perform this action.
         """
         with transaction.atomic():
-            req = RideRequest.objects.select_for_update().select_related(
-                "ride", "from_user", "ride__user"
-            ).get(id=request_id)
+            try:
+                # Lock ONLY the RideRequest row
+                req = RideRequest.objects.select_for_update().get(id=request_id)
+            except RideRequest.DoesNotExist:
+                raise ValueError("Ride request no longer exists")
 
             ride = req.ride
 
-            # 🔒 Authorization
+            # Authorization
             if ride.user.user_id != user_id:
                 raise ValueError("Only the driver can process this request")
 
@@ -413,7 +428,6 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
 
             elif action == "reject":
                 req.request_status = "rejected"
-
             else:
                 raise ValueError("Invalid action")
 
@@ -442,4 +456,3 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
                 self.group_name,
                 self.channel_name
             )
-        
