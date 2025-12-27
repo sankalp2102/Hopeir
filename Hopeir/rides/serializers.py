@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Rides, RideRequest, RideFeedback, RideChatMessage
+from .models import Rides, RideRequest, RideFeedback, RideChatMessage, CustomUser
 
 class RidesSerializer(serializers.ModelSerializer):
     class Meta:
@@ -9,6 +9,11 @@ class RidesSerializer(serializers.ModelSerializer):
         
 
 class RideRequestCreateSerializer(serializers.ModelSerializer):
+    from_user = serializers.SlugRelatedField(
+        slug_field="user_id",
+        queryset=CustomUser.objects.all()
+    )
+
     class Meta:
         model = RideRequest
         fields = ['ride', 'from_user']
@@ -29,6 +34,7 @@ class RideRequestCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("No seats available")
 
         return attrs
+
 
 
 class RideRequestListSerializer(serializers.ModelSerializer):
