@@ -2,11 +2,11 @@ import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.utils.timezone import now
 from .models import Rides, RideRequest, RideChatMessage, CustomUser
-from asgiref.sync import sync_to_async
 from urllib.parse import parse_qs
 from channels.db import database_sync_to_async
 from django.db.models import Q
 from django.db import transaction
+
 
 class RideActionConsumer(AsyncWebsocketConsumer):
     # ===================== CONNECTION =====================
@@ -22,23 +22,18 @@ class RideActionConsumer(AsyncWebsocketConsumer):
             await self.close()
             return
 
-        try:
-            self.ride = await sync_to_async(
-                Rides.objects.select_related("user").get
-            )(id=self.ride_id)
-        except Rides.DoesNotExist:
+        # FIX 3: proper database_sync_to_async wrapper instead of
+        # passing a bound queryset method to sync_to_async
+        self.ride = await self._get_ride(self.ride_id)
+        if self.ride is None:
             await self.close()
             return
 
         self.is_driver = str(self.ride.user.user_id) == str(self.user_id)
 
-        self.is_accepted_passenger = await sync_to_async(
-            RideRequest.objects.filter(
-                ride=self.ride,
-                from_user__user_id=self.user_id,
-                request_status="accepted",
-            ).exists
-        )()
+        self.is_accepted_passenger = await self._check_accepted_passenger(
+            self.ride, self.user_id
+        )
 
         if not (self.is_driver or self.is_accepted_passenger):
             await self.close()
@@ -51,7 +46,6 @@ class RideActionConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
 
-        # 🔹 EXISTING CONNECTION PAYLOAD
         await self.send(
             text_data=json.dumps(
                 {
@@ -63,21 +57,8 @@ class RideActionConsumer(AsyncWebsocketConsumer):
             )
         )
 
-        # =====================================================
-        # SEND CHAT HISTORY ON CONNECT
-        # =====================================================
-
-        chat_history = await sync_to_async(list)(
-            RideChatMessage.objects.filter(ride=self.ride)
-            .select_related("sender")
-            .order_by("created_at")
-            .values(
-                "id",
-                "message",
-                "created_at",
-                "sender__user_id",
-            )
-        )
+        # Send chat history on connect
+        chat_history = await self._get_chat_history(self.ride)
 
         await self.send(
             text_data=json.dumps(
@@ -89,7 +70,7 @@ class RideActionConsumer(AsyncWebsocketConsumer):
                             "id": chat["id"],
                             "message": chat["message"],
                             "timestamp": chat["created_at"].isoformat(),
-                            "sender_id": chat["sender__user_id"],
+                            "sender_id": str(chat["sender__user_id"]),
                         }
                         for chat in chat_history
                     ],
@@ -119,8 +100,6 @@ class RideActionConsumer(AsyncWebsocketConsumer):
             await self._handle_location_update(data)
             return
 
-        return
-
     # ===================== CHAT =====================
 
     async def _handle_chat(self, data):
@@ -128,26 +107,19 @@ class RideActionConsumer(AsyncWebsocketConsumer):
         if not message:
             return
 
-        try:
-            sender = await sync_to_async(CustomUser.objects.get)(
-                user_id=self.user_id
-            )
-        except CustomUser.DoesNotExist:
+        result = await self._save_chat_message(self.ride, self.user_id, message)
+        if result is None:
             return
 
-        chat = await sync_to_async(RideChatMessage.objects.create)(
-            ride=self.ride,
-            sender=sender,
-            message=message,
-        )
+        chat_msg, sender_id = result
 
         await self.channel_layer.group_send(
             self.room_group_name,
             {
                 "type": "chat_message",
-                "message": chat.message,
-                "sender_id": sender.user_id,
-                "timestamp": chat.created_at.isoformat(),
+                "message": chat_msg.message,
+                "sender_id": str(sender_id),
+                "timestamp": chat_msg.created_at.isoformat(),
             },
         )
 
@@ -169,14 +141,20 @@ class RideActionConsumer(AsyncWebsocketConsumer):
         if not self.is_driver:
             return
 
-        if self.ride.status in {"completed", "cancelled"}:
+        # FIX 4: re-fetch ride status from DB before acting
+        # so stale in-memory status never allows a wrong transition
+        fresh_status = await self._get_ride_status(self.ride_id)
+        if fresh_status is None:
             return
 
-        if action == "start" and self.ride.status == "pending":
+        if fresh_status in {"completed", "cancelled"}:
+            return
+
+        if action == "start" and fresh_status == "pending":
             self.ride.status = "ongoing"
             self.ride.start_time = now()
 
-        elif action == "end" and self.ride.status == "ongoing":
+        elif action == "end" and fresh_status == "ongoing":
             self.ride.status = "completed"
             self.ride.end_time = now()
 
@@ -186,14 +164,7 @@ class RideActionConsumer(AsyncWebsocketConsumer):
         else:
             return
 
-        await sync_to_async(self.ride.save)()
-
-        await sync_to_async(
-            RideRequest.objects.filter(
-                ride=self.ride,
-                request_status="pending",
-            ).update
-        )(request_status="rejected")
+        await self._save_ride_and_reject_pending(self.ride)
 
         await self.channel_layer.group_send(
             self.room_group_name,
@@ -253,9 +224,64 @@ class RideActionConsumer(AsyncWebsocketConsumer):
             self.channel_name,
         )
 
+    # ===================== DB HELPERS =====================
+
+    @database_sync_to_async
+    def _get_ride(self, ride_id):
+        # FIX 3: full function wrapped in database_sync_to_async
+        try:
+            return Rides.objects.select_related("user").get(id=ride_id)
+        except Rides.DoesNotExist:
+            return None
+
+    @database_sync_to_async
+    def _check_accepted_passenger(self, ride, user_id):
+        return RideRequest.objects.filter(
+            ride=ride,
+            from_user__user_id=user_id,
+            request_status="accepted",
+        ).exists()
+
+    @database_sync_to_async
+    def _get_chat_history(self, ride):
+        return list(
+            RideChatMessage.objects.filter(ride=ride)
+            .select_related("sender")
+            .order_by("created_at")
+            .values("id", "message", "created_at", "sender__user_id")
+        )
+
+    @database_sync_to_async
+    def _save_chat_message(self, ride, user_id, message):
+        try:
+            sender = CustomUser.objects.get(user_id=user_id)
+        except CustomUser.DoesNotExist:
+            return None
+        chat = RideChatMessage.objects.create(
+            ride=ride, sender=sender, message=message
+        )
+        return chat, sender.user_id
+
+    @database_sync_to_async
+    def _get_ride_status(self, ride_id):
+        # FIX 4: fresh status from DB, not self.ride.status
+        try:
+            return Rides.objects.values_list("status", flat=True).get(id=ride_id)
+        except Rides.DoesNotExist:
+            return None
+
+    @database_sync_to_async
+    def _save_ride_and_reject_pending(self, ride):
+        ride.save()
+        RideRequest.objects.filter(
+            ride=ride,
+            request_status="pending",
+        ).update(request_status="rejected")
 
 
-        
+# ══════════════════════════════════════════════════════════════════════════
+
+
 class RideRequestConsumer(AsyncWebsocketConsumer):
     """
     Handles real-time ride request lifecycle:
@@ -284,7 +310,6 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
 
-        # Send initial state
         requests = await self.get_relevant_requests(self.user_id)
 
         await self.send(text_data=json.dumps({
@@ -312,7 +337,7 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             return
 
         try:
-            ride_request = await self.process_request_action(
+            response_data = await self.process_request_action(
                 request_id=request_id,
                 action=action,
                 user_id=self.user_id
@@ -324,11 +349,11 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             }))
             return
 
-        response_data = self.serialize_request(ride_request)
-
-        # Notify both driver and passenger
-        driver_group = f"user_{ride_request.ride.user.user_id}"
-        passenger_group = f"user_{ride_request.from_user.user_id}"
+        # FIX 2: serialize_request is now inside process_request_action
+        # so all relation access happens inside the database_sync_to_async
+        # boundary — no lazy loads outside it
+        driver_group    = f"user_{response_data['driver_id']}"
+        passenger_group = f"user_{response_data['passenger_id']}"
 
         for group in {driver_group, passenger_group}:
             await self.channel_layer.group_send(
@@ -349,15 +374,10 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
         }))
 
     # ======================================================
-    # DB HELPERS (SYNC → ASYNC SAFE)
+    # DB HELPERS
     # ======================================================
     @database_sync_to_async
     def get_relevant_requests(self, user_id):
-        """
-        Fetch all ride requests relevant to the user.
-        Driver → requests for their rides
-        Passenger → requests they sent
-        """
         qs = (
             RideRequest.objects
             .select_related("ride", "from_user", "ride__user")
@@ -377,7 +397,6 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             )
         )
 
-        # Convert datetime → JSON-safe string
         return [
             {
                 **row,
@@ -390,20 +409,25 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def process_request_action(self, request_id, action, user_id):
         """
-        Accept or reject a ride request.
-        Only the driver of the ride can perform this action.
+        FIX 2: select_related brings ride, ride__user and from_user
+        in one locked query. All relation access happens here inside
+        the transaction — serialize_request moved inside so no lazy
+        loads escape this boundary.
         """
         with transaction.atomic():
             try:
-                # Lock ONLY the RideRequest row
-                req = RideRequest.objects.select_for_update().get(id=request_id)
+                req = (
+                    RideRequest.objects
+                    .select_for_update()
+                    .select_related("ride__user", "from_user")
+                    .get(id=request_id)
+                )
             except RideRequest.DoesNotExist:
                 raise ValueError("Ride request no longer exists")
 
             ride = req.ride
 
-            # Authorization
-            if ride.user.user_id != user_id:
+            if str(ride.user.user_id) != str(user_id):
                 raise ValueError("Only the driver can process this request")
 
             if ride.status in {"ongoing", "completed", "cancelled"}:
@@ -432,20 +456,17 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
                 raise ValueError("Invalid action")
 
             req.save()
-            return req
 
-    # ======================================================
-    # SERIALIZER (INTERNAL)
-    # ======================================================
-    def serialize_request(self, req):
-        return {
-            "id": req.id,
-            "ride_id": req.ride.id,
-            "request_status": req.request_status,
-            "requested_at": req.requested_at.isoformat(),
-            "passenger_id": req.from_user.user_id,
-            "driver_id": req.ride.user.user_id,
-        }
+            # FIX 2: serialize here while still inside database_sync_to_async
+            # all fields already loaded by select_related — zero extra queries
+            return {
+                "id": req.id,
+                "ride_id": ride.id,
+                "request_status": req.request_status,
+                "requested_at": req.requested_at.isoformat(),
+                "passenger_id": str(req.from_user.user_id),
+                "driver_id": str(ride.user.user_id),
+            }
 
     # ======================================================
     # DISCONNECT
