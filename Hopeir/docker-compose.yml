@@ -1,0 +1,71 @@
+version: '3.8'
+ 
+services:
+ 
+  # ── PostgreSQL ────────────────────────────────────────────────────────
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: hopeir_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: hopeir_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'hopeir_user', '-d', 'hopeir_db']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+ 
+  # ── SuperTokens ───────────────────────────────────────────────────────
+  supertokens:
+    image: registry.supertokens.io/supertokens/supertokens-postgresql:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3567:3567"
+    environment:
+      POSTGRESQL_CONNECTION_URI: "postgresql://hopeir_user:${DB_PASSWORD}@db:5432/hopeir_db"
+    networks:
+      - app_network
+    restart: unless-stopped
+    healthcheck:
+      test: >
+        bash -c 'exec 3<>/dev/tcp/127.0.0.1/3567 &&
+        echo -e "GET /hello HTTP/1.1\r\nhost: 127.0.0.1:3567\r\nConnection: close\r\n\r\n" >&3 &&
+        cat <&3 | grep "Hello"'
+      interval: 10s
+      timeout: 5s
+      retries: 5
+ 
+  # ── Django ────────────────────────────────────────────────────────────
+  django:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+      supertokens:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      DATABASE_URL: "postgresql://hopeir_user:${DB_PASSWORD}@db:5432/hopeir_db"
+      SUPERTOKENS_URL: "http://supertokens:3567"
+      DEBUG: "False"
+    networks:
+      - app_network
+    restart: unless-stopped
+ 
+volumes:
+  postgres_data:
+ 
+networks:
+  app_network:
+    driver: bridge
