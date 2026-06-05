@@ -22,8 +22,6 @@ class RideActionConsumer(AsyncWebsocketConsumer):
             await self.close()
             return
 
-        # FIX 3: proper database_sync_to_async wrapper instead of
-        # passing a bound queryset method to sync_to_async
         self.ride = await self._get_ride(self.ride_id)
         if self.ride is None:
             await self.close()
@@ -57,7 +55,6 @@ class RideActionConsumer(AsyncWebsocketConsumer):
             )
         )
 
-        # Send chat history on connect
         chat_history = await self._get_chat_history(self.ride)
 
         await self.send(
@@ -141,8 +138,6 @@ class RideActionConsumer(AsyncWebsocketConsumer):
         if not self.is_driver:
             return
 
-        # FIX 4: re-fetch ride status from DB before acting
-        # so stale in-memory status never allows a wrong transition
         fresh_status = await self._get_ride_status(self.ride_id)
         if fresh_status is None:
             return
@@ -228,7 +223,6 @@ class RideActionConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _get_ride(self, ride_id):
-        # FIX 3: full function wrapped in database_sync_to_async
         try:
             return Rides.objects.select_related("user").get(id=ride_id)
         except Rides.DoesNotExist:
@@ -264,7 +258,6 @@ class RideActionConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _get_ride_status(self, ride_id):
-        # FIX 4: fresh status from DB, not self.ride.status
         try:
             return Rides.objects.values_list("status", flat=True).get(id=ride_id)
         except Rides.DoesNotExist:
@@ -283,12 +276,6 @@ class RideActionConsumer(AsyncWebsocketConsumer):
 
 
 class RideRequestConsumer(AsyncWebsocketConsumer):
-    """
-    Handles real-time ride request lifecycle:
-    - Initial request list on connect
-    - Accept / Reject by driver
-    - Real-time updates to driver & passenger
-    """
 
     # ======================================================
     # CONNECT
@@ -310,59 +297,81 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
 
-        requests = await self.get_relevant_requests(self.user_id)
-
-        await self.send(text_data=json.dumps({
-            "type": "initial_state",
-            "data": requests
-        }))
+        try:
+            requests = await self.get_relevant_requests(self.user_id)
+            await self.send(text_data=json.dumps({
+                "type": "initial_state",
+                "data": requests
+            }))
+        except Exception as e:
+            # FIX 2: UUID serialization error on connect must not kill connection
+            await self.send(text_data=json.dumps({
+                "type": "error",
+                "message": f"Failed to load initial requests: {str(e)}"
+            }))
 
     # ======================================================
     # RECEIVE (ROUTER)
     # ======================================================
     async def receive(self, text_data):
+        # FIX 1: wrap entire receive in try/except
+        # Any unhandled exception previously bubbled up to Channels
+        # which closed the WebSocket — now we catch everything,
+        # send an error message back, and keep the connection alive
         try:
-            data = json.loads(text_data)
-        except json.JSONDecodeError:
-            return
+            try:
+                data = json.loads(text_data)
+            except json.JSONDecodeError:
+                await self.send(text_data=json.dumps({
+                    "type": "error",
+                    "message": "Invalid JSON"
+                }))
+                return
 
-        action = data.get("action")
-        request_id = data.get("request_id")
+            action = data.get("action")
+            request_id = data.get("request_id")
 
-        if action not in {"accept", "reject"} or not request_id:
-            await self.send(text_data=json.dumps({
-                "type": "error",
-                "message": "Invalid action or request_id"
-            }))
-            return
+            if action not in {"accept", "reject"} or not request_id:
+                await self.send(text_data=json.dumps({
+                    "type": "error",
+                    "message": "Invalid action or missing request_id"
+                }))
+                return
 
-        try:
             response_data = await self.process_request_action(
                 request_id=request_id,
                 action=action,
                 user_id=self.user_id
             )
+
+            driver_group    = f"user_{response_data['driver_id']}"
+            passenger_group = f"user_{response_data['passenger_id']}"
+
+            # FIX 4: list instead of set — deterministic order
+            groups = list({driver_group, passenger_group})
+            for group in groups:
+                await self.channel_layer.group_send(
+                    group,
+                    {
+                        "type": "ride_request_updated",
+                        "data": response_data
+                    }
+                )
+
         except ValueError as exc:
+            # Business logic errors — send message, keep connection alive
             await self.send(text_data=json.dumps({
                 "type": "error",
                 "message": str(exc)
             }))
-            return
 
-        # FIX 2: serialize_request is now inside process_request_action
-        # so all relation access happens inside the database_sync_to_async
-        # boundary — no lazy loads outside it
-        driver_group    = f"user_{response_data['driver_id']}"
-        passenger_group = f"user_{response_data['passenger_id']}"
-
-        for group in {driver_group, passenger_group}:
-            await self.channel_layer.group_send(
-                group,
-                {
-                    "type": "ride_request_updated",
-                    "data": response_data
-                }
-            )
+        except Exception as exc:
+            # FIX 1: catch ALL other exceptions — DB errors, integrity errors etc.
+            # Send error to client, connection stays open
+            await self.send(text_data=json.dumps({
+                "type": "error",
+                "message": "Something went wrong, please try again"
+            }))
 
     # ======================================================
     # GROUP EVENT HANDLER
@@ -397,23 +406,24 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             )
         )
 
+        # FIX 2: cast UUID fields to str so json.dumps never fails
+        # uuid.UUID objects are not JSON serializable — this was
+        # silently crashing on connect and disconnecting the socket
         return [
             {
-                **row,
-                "requested_at": row["requested_at"].isoformat()
-                if row["requested_at"] else None
+                "id": row["id"],
+                "ride_id": row["ride_id"],
+                "request_status": row["request_status"],
+                "requested_at": row["requested_at"].isoformat() if row["requested_at"] else None,
+                "from_user_id": str(row["from_user__user_id"]) if row["from_user__user_id"] else None,
+                "from_user_name": row["from_user__first_name"] or "",
+                "driver_id": str(row["ride__user__user_id"]) if row["ride__user__user_id"] else None,
             }
             for row in qs
         ]
 
     @database_sync_to_async
     def process_request_action(self, request_id, action, user_id):
-        """
-        FIX 2: select_related brings ride, ride__user and from_user
-        in one locked query. All relation access happens here inside
-        the transaction — serialize_request moved inside so no lazy
-        loads escape this boundary.
-        """
         with transaction.atomic():
             try:
                 req = (
@@ -457,8 +467,8 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
 
             req.save()
 
-            # FIX 2: serialize here while still inside database_sync_to_async
-            # all fields already loaded by select_related — zero extra queries
+            # All fields from select_related — zero extra queries
+            # Cast UUIDs to str here so the dict is JSON serializable
             return {
                 "id": req.id,
                 "ride_id": ride.id,

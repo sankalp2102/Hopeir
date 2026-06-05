@@ -17,7 +17,7 @@ import json
 import sys
 import uuid
 
-BASE = "https://hopeir.onrender.com"
+BASE = "http://34.122.56.250:8000"
 
 # Test credentials — random suffix avoids conflicts on repeated runs
 RUN_ID       = str(uuid.uuid4())[:8]
