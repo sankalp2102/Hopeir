@@ -365,7 +365,6 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             }))
 
         except Exception:
-            # Log full traceback so we can see exact error in docker logs
             logger.error(f"WebSocket receive error:\n{traceback.format_exc()}")
             await self.send(text_data=json.dumps({
                 "type": "error",
@@ -420,18 +419,33 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def process_request_action(self, request_id, action, user_id):
+        """
+        FIX: select_for_update() cannot be used with select_related()
+        on nullable FK fields — PostgreSQL forbids FOR UPDATE on outer joins.
+        Solution: lock only the RideRequest row, then fetch related
+        objects separately with their own queries.
+        """
         with transaction.atomic():
             try:
+                # Lock only RideRequest row — no joins
                 req = (
                     RideRequest.objects
                     .select_for_update()
-                    .select_related("ride__user", "from_user")
                     .get(id=request_id)
                 )
             except RideRequest.DoesNotExist:
                 raise ValueError("Ride request no longer exists")
 
-            ride = req.ride
+            # Fetch related objects separately after the lock
+            try:
+                ride = Rides.objects.select_related("user").get(id=req.ride_id)
+            except Rides.DoesNotExist:
+                raise ValueError("Ride no longer exists")
+
+            try:
+                from_user = CustomUser.objects.get(user_id=req.from_user_id)
+            except CustomUser.DoesNotExist:
+                raise ValueError("Passenger user no longer exists")
 
             if str(ride.user.user_id) != str(user_id):
                 raise ValueError("Only the driver can process this request")
@@ -468,7 +482,7 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
                 "ride_id": ride.id,
                 "request_status": req.request_status,
                 "requested_at": req.requested_at.isoformat(),
-                "passenger_id": str(req.from_user.user_id),
+                "passenger_id": str(from_user.user_id),
                 "driver_id": str(ride.user.user_id),
             }
 
