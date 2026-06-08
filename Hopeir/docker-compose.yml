@@ -1,7 +1,7 @@
 version: '3.8'
- 
+
 services:
- 
+
   # ── PostgreSQL ────────────────────────────────────────────────────────
   db:
     image: postgres:15
@@ -19,7 +19,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
- 
+
+  # ── Redis ─────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    networks:
+      - app_network
+    restart: unless-stopped
+
   # ── SuperTokens ───────────────────────────────────────────────────────
   supertokens:
     image: registry.supertokens.io/supertokens/supertokens-postgresql:latest
@@ -41,7 +48,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
- 
+
   # ── Django ────────────────────────────────────────────────────────────
   django:
     build:
@@ -52,20 +59,23 @@ services:
         condition: service_healthy
       supertokens:
         condition: service_healthy
+      redis:
+        condition: service_started
     ports:
       - "8000:8000"
     environment:
       SECRET_KEY: ${SECRET_KEY}
       DATABASE_URL: "postgresql://hopeir_user:${DB_PASSWORD}@db:5432/hopeir_db"
       SUPERTOKENS_URL: "http://supertokens:3567"
+      REDIS_URL: "redis://redis:6379"
       DEBUG: "False"
     networks:
       - app_network
     restart: unless-stopped
- 
+
 volumes:
   postgres_data:
- 
+
 networks:
   app_network:
     driver: bridge
