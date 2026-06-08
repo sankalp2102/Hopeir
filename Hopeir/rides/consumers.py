@@ -372,11 +372,24 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             }))
 
     # ======================================================
-    # GROUP EVENT HANDLER
+    # GROUP EVENT HANDLERS
     # ======================================================
     async def ride_request_updated(self, event):
+        """Handles accept/reject broadcast from process_request_action."""
         await self.send(text_data=json.dumps({
             "type": "ride_request_updated",
+            "data": event["data"]
+        }))
+
+    async def ride_request_created(self, event):
+        """
+        FIX 2: handles new ride request notification sent to driver.
+        notify_user_about_request sends type='ride_request_created'
+        but there was no handler — Channels threw ValueError and
+        closed the driver's WebSocket connection.
+        """
+        await self.send(text_data=json.dumps({
+            "type": "ride_request_created",
             "data": event["data"]
         }))
 
@@ -420,14 +433,12 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def process_request_action(self, request_id, action, user_id):
         """
-        FIX: select_for_update() cannot be used with select_related()
-        on nullable FK fields — PostgreSQL forbids FOR UPDATE on outer joins.
-        Solution: lock only the RideRequest row, then fetch related
-        objects separately with their own queries.
+        select_for_update() cannot be used with select_related() on
+        nullable FK fields — PostgreSQL forbids FOR UPDATE on outer joins.
+        Lock only the RideRequest row, fetch related objects separately.
         """
         with transaction.atomic():
             try:
-                # Lock only RideRequest row — no joins
                 req = (
                     RideRequest.objects
                     .select_for_update()
@@ -436,7 +447,6 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             except RideRequest.DoesNotExist:
                 raise ValueError("Ride request no longer exists")
 
-            # Fetch related objects separately after the lock
             try:
                 ride = Rides.objects.select_related("user").get(id=req.ride_id)
             except Rides.DoesNotExist:

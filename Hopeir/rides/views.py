@@ -24,7 +24,7 @@ class RideCreateView(mixins.CreateModelMixin, GenericAPIView):
 
     def post(self, request, *args, **kwargs):
         return self.create(request, *args, **kwargs)
-    
+
 class RideListView(generics.ListAPIView):
     serializer_class = RidesSerializer
     permission_classes = [permissions.AllowAny]
@@ -43,8 +43,7 @@ class RideListView(generics.ListAPIView):
         return queryset
 
 
-# class RideActionView(GenericAPIView):
-#     ... (kept as-is, not repeated here)
+# class RideActionView — moved to WebSocket (RideActionConsumer)
 
 
 class RideRequestCreateView(generics.CreateAPIView):
@@ -70,8 +69,11 @@ class RideRequestCreateView(generics.CreateAPIView):
         request_data = {
             'request_id': ride_request.id,
             'ride_id': ride_request.ride.id,
+            # FIX 1: driver_id was missing — frontend had no way to know
+            # who the driver is from this response
+            'driver_id': str(ride_request.ride.user.user_id),
             'from_user': {
-                'id': ride_request.from_user.user_id,
+                'id': str(ride_request.from_user.user_id),
                 'name': ride_request.from_user.first_name
             },
             'request_status': 'pending',
@@ -83,11 +85,15 @@ class RideRequestCreateView(generics.CreateAPIView):
             request_data=request_data,
             notification_type='created'
         )
+
         return Response({
             "success": True,
             "message": "Ride request created",
             "data": request_data
         }, status=status.HTTP_201_CREATED)
+
+
+# class RideRequestRespondView — moved to WebSocket (RideRequestConsumer)
 
 
 class RideRequestListForDriverView(generics.ListAPIView):
@@ -111,7 +117,7 @@ class RideFeedbackCreateView(generics.CreateAPIView):
 
     def perform_create(self, serializer):
         serializer.save()
-    
+
 
 class RideFeedbackListView(generics.ListAPIView):
     serializer_class = RideFeedbackSerializer
