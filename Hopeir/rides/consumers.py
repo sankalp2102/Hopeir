@@ -1,4 +1,6 @@
 import json
+import logging
+import traceback
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.utils.timezone import now
 from .models import Rides, RideRequest, RideChatMessage, CustomUser
@@ -6,6 +8,8 @@ from urllib.parse import parse_qs
 from channels.db import database_sync_to_async
 from django.db.models import Q
 from django.db import transaction
+
+logger = logging.getLogger(__name__)
 
 
 class RideActionConsumer(AsyncWebsocketConsumer):
@@ -303,21 +307,17 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
                 "type": "initial_state",
                 "data": requests
             }))
-        except Exception as e:
-            # FIX 2: UUID serialization error on connect must not kill connection
+        except Exception:
+            logger.error(f"WebSocket connect error:\n{traceback.format_exc()}")
             await self.send(text_data=json.dumps({
                 "type": "error",
-                "message": f"Failed to load initial requests: {str(e)}"
+                "message": "Failed to load initial requests"
             }))
 
     # ======================================================
     # RECEIVE (ROUTER)
     # ======================================================
     async def receive(self, text_data):
-        # FIX 1: wrap entire receive in try/except
-        # Any unhandled exception previously bubbled up to Channels
-        # which closed the WebSocket — now we catch everything,
-        # send an error message back, and keep the connection alive
         try:
             try:
                 data = json.loads(text_data)
@@ -347,7 +347,6 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             driver_group    = f"user_{response_data['driver_id']}"
             passenger_group = f"user_{response_data['passenger_id']}"
 
-            # FIX 4: list instead of set — deterministic order
             groups = list({driver_group, passenger_group})
             for group in groups:
                 await self.channel_layer.group_send(
@@ -359,15 +358,15 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
                 )
 
         except ValueError as exc:
-            # Business logic errors — send message, keep connection alive
+            logger.warning(f"WebSocket business logic error: {exc}")
             await self.send(text_data=json.dumps({
                 "type": "error",
                 "message": str(exc)
             }))
 
-        except Exception as exc:
-            # FIX 1: catch ALL other exceptions — DB errors, integrity errors etc.
-            # Send error to client, connection stays open
+        except Exception:
+            # Log full traceback so we can see exact error in docker logs
+            logger.error(f"WebSocket receive error:\n{traceback.format_exc()}")
             await self.send(text_data=json.dumps({
                 "type": "error",
                 "message": "Something went wrong, please try again"
@@ -406,9 +405,6 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
             )
         )
 
-        # FIX 2: cast UUID fields to str so json.dumps never fails
-        # uuid.UUID objects are not JSON serializable — this was
-        # silently crashing on connect and disconnecting the socket
         return [
             {
                 "id": row["id"],
@@ -467,8 +463,6 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
 
             req.save()
 
-            # All fields from select_related — zero extra queries
-            # Cast UUIDs to str here so the dict is JSON serializable
             return {
                 "id": req.id,
                 "ride_id": ride.id,
