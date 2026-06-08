@@ -481,3 +481,4 @@ class RideRequestConsumer(AsyncWebsocketConsumer):
                 self.group_name,
                 self.channel_name
             )
+            
